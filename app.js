@@ -11,7 +11,7 @@
 // ===== defaults =====
 const D = {
   startAge: 25, endAge: 90, chartAge: 60,
-  startingNW: 490000,
+  startingNW: 290000,
   base: 225000, varTarget: 75000, attainment: 100,
   k401: 23500,
   compGrowth: 2,          // real %/yr on OTE
@@ -21,7 +21,7 @@ const D = {
   partnerAnnual: 40500,
   // equity
   grant: 700000, refreshAnnual: 150000, eqMu: 15, eqSigma: 50, eqFailPct: 4,
-  liqYear: 5, haircut: 25, eqTax: 35,
+  liqYear: 5, haircut: 25, eqTax: 45, // 45: double-trigger RSUs settle as ORDINARY income in one lump at liquidity (confirmed by the offer letter); ~47% marginal fed+MD on top of salary, not cap-gains
   // life events
   kids: 0, kidAge: 32, college: 1,
   homeAge: 0, homePrice: 600000, homeDownPct: 10, homePostSpendWk: 1600,
