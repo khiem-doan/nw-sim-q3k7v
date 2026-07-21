@@ -17,18 +17,20 @@ const D = {
   compGrowth: 2,          // real %/yr on OTE
   promoYear: 3, promoJump: 60000, // 0 promoYear = off
   homeSpendWk: 600, moveOutAge: 30, moveOutSpendWk: 1292,
-  fireSpend: 100000, swr: 3.5, retireAge: 0, wdTax: 8, // retireAge 0 = retire at FIRE
+  fireSpend: 100000, swr: 3.5, retireAge: 38, wdTax: 8, // retireAge 0 = retire at FIRE; default 38 per plan (cushion years past the number)
   partnerAnnual: 40500,
-  // equity
-  grant: 700000, refreshAnnual: 150000, eqMu: 15, eqSigma: 50, eqFailPct: 4,
-  liqYear: 5, haircut: 25, eqTax: 45, // 45: double-trigger RSUs settle as ORDINARY income in one lump at liquidity (confirmed by the offer letter); ~47% marginal fed+MD on top of salary, not cap-gains
+  // equity - HONEST defaults: no refresh program promised in the letter, liquidity never (0) so
+  // every headline FIRE number is truly cash-comp-only; slide liqYear/refreshAnnual up to model upside
+  grant: 700000, refreshAnnual: 0, eqMu: 15, eqSigma: 50, eqFailPct: 4,
+  liqYear: 0, haircut: 25, eqTax: 45, // 45: double-trigger RSUs settle as ORDINARY income in one lump at liquidity (confirmed by the offer letter); ~47% marginal fed+MD on top of salary, not cap-gains
   // life events
   kids: 0, kidAge: 32, college: 1,
   homeAge: 0, homePrice: 600000, homeDownPct: 10, homePostSpendWk: 1600,
   // market
   returnModel: "normal", // normal | t | bootstrap
   divDrag: 0.4,
-  spyMeanHist: 0.07, spyMeanCons: 0.045, spyStd: 0.17, vxusMean: 0.045, vxusStd: 0.18,
+  usMu: 7, // expected US real return %/yr; intl sleeve tracks 2.5pts below; bootstrap shifts history by (usMu - 7)
+  spyStd: 0.17, vxusStd: 0.18,
   corr: 0.7, spyW: 2 / 3, vxusW: 1 / 3,
   sims: 20000,
   studientContrib: 85800,
@@ -124,8 +126,11 @@ function buildSchedules(sc, cfg) {
 // ===== simulation =====
 function runSim(sc, cfg) {
   const { contribs, outflows, years } = buildSchedules(sc, cfg);
-  const spyMean = sc.returns === "cons" ? cfg.spyMeanCons : cfg.spyMeanHist;
-  const consAdj = sc.returns === "cons" ? cfg.spyMeanHist - cfg.spyMeanCons : 0;
+  const usMu = (cfg.usMu !== undefined ? cfg.usMu : 7) / 100;
+  const consAdj = sc.returns === "cons" ? 0.025 : 0; // conservative scenario: both sleeves 2.5pts below
+  const spyMean = usMu - consAdj;
+  const vxusMean = usMu - 0.025 - consAdj;
+  const bootShift = usMu - 0.07 - consAdj;
   const fireTarget = cfg.fireSpend / (cfg.swr / 100);
   const drag = cfg.divDrag / 100;
   const wd = cfg.fireSpend * (1 + cfg.wdTax / 100);
@@ -154,19 +159,20 @@ function runSim(sc, cfg) {
       let r;
       if (cfg.returnModel === "bootstrap") {
         const [us, intl] = seq[y];
-        r = cfg.spyW * (us / 100 - consAdj) + cfg.vxusW * (intl / 100 - (consAdj ? consAdj : 0));
+        r = cfg.spyW * (us / 100 + bootShift) + cfg.vxusW * (intl / 100 + bootShift);
       } else {
         const z1 = cfg.returnModel === "t" ? randT5() : randn();
         const z2 = cfg.returnModel === "t" ? randT5() : randn();
         const spyR = spyMean + cfg.spyStd * z1;
-        const vxusR = cfg.vxusMean + cfg.vxusStd * (cfg.corr * z1 + Math.sqrt(1 - cfg.corr * cfg.corr) * z2);
+        const vxusR = vxusMean + cfg.vxusStd * (cfg.corr * z1 + Math.sqrt(1 - cfg.corr * cfg.corr) * z2);
         r = cfg.spyW * spyR + cfg.vxusW * vxusR;
       }
       r -= drag;
 
       // retirement trigger check (start of year)
       if (!retired) {
-        const trigger = cfg.retireAge > 0 ? age >= cfg.retireAge : (fireAge !== null);
+        // retire at the LATER of hitting the FIRE number and the earliest-retire age (never retire under-funded)
+        const trigger = (fireAge !== null) && (cfg.retireAge === 0 || age >= cfg.retireAge);
         if (trigger) { retired = true; retiredYear = y; }
       }
 
@@ -395,7 +401,7 @@ function scenarioDefs() {
   ];
 }
 
-const SLIDER_IDS = ["attainment", "compGrowth", "promoYear", "promoJump", "homeSpendWk", "moveOutAge", "moveOutSpendWk", "fireSpend", "swr", "retireAge", "wdTax", "startingNW", "grant", "refreshAnnual", "eqMu", "eqSigma", "eqFailPct", "liqYear", "haircut", "eqTax", "kids", "kidAge", "college", "homeAge", "homePrice", "homeDownPct", "homePostSpendWk", "divDrag"];
+const SLIDER_IDS = ["attainment", "compGrowth", "promoYear", "promoJump", "homeSpendWk", "moveOutAge", "moveOutSpendWk", "fireSpend", "swr", "retireAge", "wdTax", "startingNW", "grant", "refreshAnnual", "eqMu", "eqSigma", "eqFailPct", "liqYear", "haircut", "eqTax", "kids", "kidAge", "college", "homeAge", "homePrice", "homeDownPct", "homePostSpendWk", "divDrag", "usMu"];
 
 function ctlHtml() {
   const c = CFG;
@@ -410,7 +416,7 @@ function ctlHtml() {
     <option value="normal"${c.returnModel === "normal" ? " selected" : ""}>Normal (iid)</option>
     <option value="t"${c.returnModel === "t" ? " selected" : ""}>Fat tails (Student-t df5)</option>
     <option value="bootstrap"${c.returnModel === "bootstrap" ? " selected" : ""}>Historical block bootstrap</option>
-  </select></div>` + s("divDrag", "Dividend tax drag /yr", 0, 0.6, 0.05, "%") + s("startingNW", "Starting NW", 200000, 800000, 10000) + s("fireSpend", "FIRE spend $/yr", 50000, 150000, 5000) + s("swr", "SWR", 3, 4.5, 0.25, "%") + s("retireAge", "Retire at age (0=at FIRE)", 0, 55, 1) + s("wdTax", "Withdrawal tax gross-up", 0, 25, 1, "%"))}
+  </select></div>` + s("usMu", "US real return mu", 3, 11, 0.5, "%") + s("divDrag", "Dividend tax drag /yr", 0, 0.6, 0.05, "%") + s("startingNW", "Starting NW", 200000, 800000, 10000) + s("fireSpend", "FIRE spend $/yr", 50000, 150000, 5000) + s("swr", "SWR", 3, 4.5, 0.25, "%") + s("retireAge", "Earliest retire age (0=at FIRE)", 0, 55, 1) + s("wdTax", "Withdrawal tax gross-up", 0, 25, 1, "%"))}
   </div><div class="btnrow"><button class="run" onclick="rerun()">Re-run 20,000 sims</button>
   <button class="tab" onclick="resetDefaults()">Reset defaults</button>
   <span id="incomepeek" style="font-size:10px;color:#5a6a8a"></span></div></div>`;
@@ -439,20 +445,21 @@ function controlsGuide() {
   ${e("Post-purchase spend /wk", "weekly spending after buying (mortgage, taxes, upkeep, life). Replaces the rent number. The model tracks the cash-flow diversion only, not home equity as an asset.")}
   ${g("Equity")}
   ${e("Initial grant", "the $700K RSU grant at the Series E-1 price. It counts $0 toward FIRE unless a liquidity event happens; until then it is only the dashed overlay line.")}
-  ${e("Refresh grant /yr (from yr 2)", "new RSU grants in later years. The 2024-25 market norm is 20-25% of the initial grant per year.")}
+  ${e("Refresh grant /yr (from yr 2)", "new RSU grants layered ON TOP of the initial grant each year, the way public tech companies do it (each new grant starts its own 4-year vest, so grants overlap rather than waiting for the first to finish). Default 0: the offer letter promises no refresh program and private companies often skip them. Set $100-175K to model a public-tech-style program (2024-25 norm is 20-25% of the initial grant per year).")}
   ${e("Valuation growth mu", "the average yearly growth of the company's valuation. 15% is a healthy late-stage assumption; 0 or negative stress-tests stagnation.")}
   ${e("Valuation sigma", "how wildly the valuation swings year to year. Private-company outcomes are wide; 50% is realistic.")}
   ${e("Company failure /yr", "the chance each year that the equity goes to zero: the company dies, or the 10-year double-trigger window expires with no IPO or acquisition.")}
-  ${e("Liquidity yr (0=never)", "years until an IPO or acquisition lets you actually sell. 0 means it never pays, which is the honest FIRE baseline.")}
+  ${e("Liquidity yr (0=never)", "years until an IPO or acquisition lets you actually sell. 0 (the default) means it never pays, so every headline number is cash-comp-only and the equity is purely the dashed overlay. Set 5-8 to see what a real exit would add to liquid NW (after the haircut and tax).")}
   ${e("Liquidity haircut", "the percent lost at the event to dilution, liquidation preferences, and price discounts versus the paper value.")}
   ${e("Equity tax", "tax on the payout. Default 45% because double-trigger RSUs settle as ordinary income in one lump on top of salary, not capital gains.")}
   ${g("Market + retirement")}
   ${e("Return model", "Normal draws returns from a textbook bell curve. Fat tails (Student-t) keeps the same average but makes crashes more likely, matching real markets. Historical block bootstrap replays actual 5-year stretches of 1970-2024 history, keeping crashes and their recoveries together; it is the most realistic of the three.")}
+  ${e("US real return mu", "the average yearly US market return above inflation. 1970-2024 averaged about 7% real; 5% is a common forward-looking planning number given today's valuations; 3% is deep pessimism; 10% assumes the 2010s repeat. The intl sleeve always tracks 2.5 points below, and in bootstrap mode every historical year is shifted by the difference from 7%.")}
   ${e("Dividend tax drag /yr", "the small yearly tax bill on dividends in a taxable account, modeled as a constant drag on returns. 0.4% is typical for an index portfolio.")}
   ${e("Starting NW", "what is invested today. Current reality: $290K.")}
   ${e("FIRE spend $/yr", "what retired life costs per year in today's dollars.")}
   ${e("SWR", "safe withdrawal rate. The FIRE target is spend divided by SWR: $100K at 3.5% needs $2.86M. Lower SWR = a bigger target that arrives later but survives longer; research puts the fail-safe for a 50-60 year retirement near 3.25%.")}
-  ${e("Retire at age (0=at FIRE)", "0 quits the moment the target is hit. Setting an age keeps you working and saving past the target, which is why 'work to 55' medians are much larger.")}
+  ${e("Earliest retire age (0=at FIRE)", "retirement happens at the LATER of hitting the FIRE number and this age, so no path ever retires under-funded. 0 quits the moment the target is hit, the riskiest version for a 50+ year retirement. Default 38: even if the number arrives at 33, keep working to 38 for cushion, which is what the survival-to-90 metric rewards.")}
   ${e("Withdrawal tax gross-up", "the extra percent withdrawn each retired year to cover taxes on selling shares. Early retirees living off long-term gains mostly pay little; 8% is a conservative default.")}
   </details>`;
 }
@@ -485,9 +492,9 @@ function assumptionsBox() {
   return `<div class="box"><div class="bt">Assumptions (planning estimates, real dollars)</div>
   Income: $225K base + $75K x ${c.attainment}% | real growth ${c.compGrowth}%/yr${c.promoYear ? ` | promo +${fmt(c.promoJump)} at yr ${c.promoYear}` : ""} | 401k $23.5K no match | 2026 fed + MD + Howard Co + FICA | invested yr-1: <b style="color:#22d3ee">${fmt(inc.invested)}</b><br>
   Life: ${c.kids ? `${c.kids} kid(s) from age ${c.kidAge} ($34K/yr yrs 0-5, $18K/yr 6-17${c.college ? ", $120K college" : ""})` : "no kids modeled"} | ${c.homeAge ? `home at ${c.homeAge} (${fmt(c.homePrice)}, ${c.homeDownPct}%+3% out, then $${c.homePostSpendWk}/wk)` : "no home purchase"} | move-out ${c.moveOutAge}<br>
-  Market: ${c.returnModel === "bootstrap" ? "HISTORICAL 5-yr block bootstrap 1970-2024 (real, correlated, mean-reverting)" : c.returnModel === "t" ? "Student-t df5 fat tails" : "iid normal"} | 2/3 US + 1/3 intl | dividend drag ${c.divDrag}%/yr<br>
+  Market: ${c.returnModel === "bootstrap" ? "HISTORICAL 5-yr block bootstrap 1970-2024 (real, correlated, mean-reverting)" : c.returnModel === "t" ? "Student-t df5 fat tails" : "iid normal"} | 2/3 US (mu ${c.usMu}% real) + 1/3 intl (mu ${(c.usMu - 2.5).toFixed(1)}%)${c.returnModel === "bootstrap" && c.usMu !== 7 ? ` | bootstrap shifted ${c.usMu > 7 ? "+" : ""}${(c.usMu - 7).toFixed(1)}pts` : ""} | conservative scenario: both sleeves -2.5pts | dividend drag ${c.divDrag}%/yr<br>
   Equity: ${fmt(c.grant)} + ${fmt(c.refreshAnnual)}/yr refresh from yr 2 (2024-25 norm ~20-25% of initial) | cliff+monthly | mu ${c.eqMu}% sig ${c.eqSigma}% | fail ${c.eqFailPct}%/yr | liquidity yr ${c.liqYear || "never"} (-${c.haircut}% -${c.eqTax}%) | refreshes stop at liquidity/retirement; double-trigger RSU assumed<br>
-  Retirement: ${c.retireAge ? "retire at " + c.retireAge : "retire when FIRE"} | withdraw $${(c.fireSpend / 1000)}K x (1+${c.wdTax}%) to age 90 | FIRE target ${fmt(c.fireSpend / (c.swr / 100))} at ${c.swr}% | ERN context: fail-safe ~3.25% for 50-60yr horizons<br>
+  Retirement: ${c.retireAge ? "retire at FIRE, no earlier than " + c.retireAge : "retire when FIRE"} | withdraw $${(c.fireSpend / 1000)}K x (1+${c.wdTax}%) to age 90 | FIRE target ${fmt(c.fireSpend / (c.swr / 100))} at ${c.swr}% | ERN context: fail-safe ~3.25% for 50-60yr horizons<br>
   FIRE = liquid portfolio only; unrealized equity is the dashed overlay.</div>`;
 }
 
