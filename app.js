@@ -416,6 +416,47 @@ function ctlHtml() {
   <span id="incomepeek" style="font-size:10px;color:#5a6a8a"></span></div></div>`;
 }
 
+function controlsGuide() {
+  const g = (t) => `<div class="gt">${t}</div>`;
+  const e = (name, txt) => `<div class="ge"><b>${name}</b> - ${txt}</div>`;
+  return `<details class="box guide"><summary>What each control means (click to expand)</summary>
+  <div class="gnote">Everything runs in real (today's) dollars, so returns and growth rates are already net of inflation. Settings encode into the URL after a re-run, so a bookmarked link reopens with your exact configuration.</div>
+  ${g("Income")}
+  ${e("Variable attainment", "how much of the $75K variable target you actually earn each year. 100% means the full $75K lands on top of the $225K base. The bonus is discretionary, so try 50-80% to see a cautious case.")}
+  ${e("Real comp growth /yr", "annual raise above inflation. 2% means pay beats inflation by 2% every year, compounding.")}
+  ${e("Promo year (0=off)", "years from now until a promotion. 0 disables it.")}
+  ${e("Promo OTE jump", "the one-time pay bump (base + bonus target) that promotion adds in that year, on top of normal growth.")}
+  ${g("Spending + life events")}
+  ${e("Spend at home /wk", "weekly spending while living with family. Current reality: $600.")}
+  ${e("Move-out age", "the age spending switches from the at-home number to the rent number.")}
+  ${e("Rent spend /wk", "weekly all-in spending once living independently (rent, food, everything).")}
+  ${e("Children", "how many kids. Each costs $34K/yr for ages 0-5 (the childcare years) and $18K/yr for ages 6-17, per USDA-based estimates.")}
+  ${e("First child at age", "your age when the first child arrives; siblings follow every 2 years.")}
+  ${e("College fund (0/1)", "1 sets aside a $120K lump per child when that child turns 18 (in-state 4-year estimate).")}
+  ${e("Buy home at age (0=never)", "0 keeps you renting forever. An age triggers a purchase that year.")}
+  ${e("Home price", "purchase price. The down payment plus ~3% closing costs leave your portfolio in the purchase year.")}
+  ${e("Down payment", "percent of the price paid up front (first-time median is ~9-10%).")}
+  ${e("Post-purchase spend /wk", "weekly spending after buying (mortgage, taxes, upkeep, life). Replaces the rent number. The model tracks the cash-flow diversion only, not home equity as an asset.")}
+  ${g("Equity")}
+  ${e("Initial grant", "the $700K RSU grant at the Series E-1 price. It counts $0 toward FIRE unless a liquidity event happens; until then it is only the dashed overlay line.")}
+  ${e("Refresh grant /yr (from yr 2)", "new RSU grants in later years. The 2024-25 market norm is 20-25% of the initial grant per year.")}
+  ${e("Valuation growth mu", "the average yearly growth of the company's valuation. 15% is a healthy late-stage assumption; 0 or negative stress-tests stagnation.")}
+  ${e("Valuation sigma", "how wildly the valuation swings year to year. Private-company outcomes are wide; 50% is realistic.")}
+  ${e("Company failure /yr", "the chance each year that the equity goes to zero: the company dies, or the 10-year double-trigger window expires with no IPO or acquisition.")}
+  ${e("Liquidity yr (0=never)", "years until an IPO or acquisition lets you actually sell. 0 means it never pays, which is the honest FIRE baseline.")}
+  ${e("Liquidity haircut", "the percent lost at the event to dilution, liquidation preferences, and price discounts versus the paper value.")}
+  ${e("Equity tax", "tax on the payout. Default 45% because double-trigger RSUs settle as ordinary income in one lump on top of salary, not capital gains.")}
+  ${g("Market + retirement")}
+  ${e("Return model", "Normal draws returns from a textbook bell curve. Fat tails (Student-t) keeps the same average but makes crashes more likely, matching real markets. Historical block bootstrap replays actual 5-year stretches of 1970-2024 history, keeping crashes and their recoveries together; it is the most realistic of the three.")}
+  ${e("Dividend tax drag /yr", "the small yearly tax bill on dividends in a taxable account, modeled as a constant drag on returns. 0.4% is typical for an index portfolio.")}
+  ${e("Starting NW", "what is invested today. Current reality: $290K.")}
+  ${e("FIRE spend $/yr", "what retired life costs per year in today's dollars.")}
+  ${e("SWR", "safe withdrawal rate. The FIRE target is spend divided by SWR: $100K at 3.5% needs $2.86M. Lower SWR = a bigger target that arrives later but survives longer; research puts the fail-safe for a 50-60 year retirement near 3.25%.")}
+  ${e("Retire at age (0=at FIRE)", "0 quits the moment the target is hit. Setting an age keeps you working and saving past the target, which is why 'work to 55' medians are much larger.")}
+  ${e("Withdrawal tax gross-up", "the extra percent withdrawn each retired year to cover taxes on selling shares. Early retirees living off long-term gains mostly pay little; 8% is a conservative default.")}
+  </details>`;
+}
+
 function readControls() {
   for (const id of SLIDER_IDS) {
     const el = document.getElementById(id);
@@ -478,7 +519,7 @@ function render() {
       + takeaways(rs)
       + `<div class="footer">Approximate historical data; correlated returns; not financial advice</div>`;
   }
-  app.innerHTML = header + ctlHtml() + body;
+  app.innerHTML = header + ctlHtml() + controlsGuide() + body;
   const peek = document.getElementById("incomepeek");
   if (peek) {
     const inc = incomeModel(CFG.base + CFG.varTarget * CFG.attainment / 100, CFG.homeSpendWk, CFG);

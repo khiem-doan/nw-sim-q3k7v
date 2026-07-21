@@ -39,3 +39,11 @@ button.tab.active { font-weight: 700; }
 .scrolltable thead { position: sticky; top: 0; background: #0d1220; z-index: 2; }
 .footer { font-size: 9px; color: #2a3555; margin-top: 24px; text-align: center; }
 @media (max-width: 640px) { #app { padding: 20px 10px; } .ctl-grid { grid-template-columns: 1fr 1fr; } }
+
+/* v7.1 controls guide */
+.guide summary { cursor: pointer; color: #22d3ee; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; }
+.guide summary:hover { color: #7ee8f5; }
+.guide .gnote { margin: 10px 0 4px; color: #8899bb; font-style: italic; }
+.guide .gt { color: #22d3ee; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+.guide .ge { margin: 2px 0; }
+.guide .ge b { color: #e2e8f0; font-weight: 600; }
