@@ -172,10 +172,17 @@ function buildSchedules(sc, cfg) {
     // home purchase: down payment + ~3% closing out of the portfolio, then mortgage + carry auto-computed
     if (cfg.homeAge > 0 && age === cfg.homeAge) extra += cfg.homePrice * (cfg.homeDownPct + 3) / 100;
     const owned = cfg.homeAge > 0 && age >= cfg.homeAge;
-    let houseCost = 0; // annual: real mortgage payment (0 after payoff) + carry (tax/insurance/upkeep)
+    let houseCost = 0; // annual: real mortgage payment (0 after payoff) + carry (tax/insurance/upkeep) + PMI
     if (owned) {
       const k = age - cfg.homeAge;
-      houseCost = mtgRealAnnual(cfg, k) + cfg.homePrice * cfg.homeCarryPct / 100;
+      // carry scales with the APPRECIATED value: property tax reassessments + maintenance track what the home is worth
+      const curVal = cfg.homePrice * Math.pow(1 + cfg.homeAppr / 100, k);
+      houseCost = mtgRealAnnual(cfg, k) + curVal * cfg.homeCarryPct / 100;
+      // PMI (~0.6%/yr of balance) while the nominal balance exceeds 80% of the original price; auto-drops
+      if (cfg.homeDownPct < 20) {
+        const realBal = mtgRealBalance(cfg, k);
+        if (realBal * Math.pow(1 + cfg.inflPct / 100, k) > 0.8 * cfg.homePrice) houseCost += realBal * 0.006;
+      }
     }
     const baseWk = owned ? cfg.homeExtraSpendWk : (age < cfg.moveOutAge ? cfg.homeSpendWk : cfg.moveOutSpendWk);
     // explicit rent (grows in real terms, ends at purchase); 0 = legacy mode with rent embedded in the spend sliders
@@ -199,11 +206,11 @@ function buildSchedules(sc, cfg) {
     kidCosts.push(kidCost); // kept separately so retirement-phase withdrawals can charge kid years too
     houseCosts.push(houseCost); // ditto: the mortgage doesn't stop because you retired
     rentCosts.push(rentCost); // ditto for renters: rent continues (and keeps growing) through retirement
-    // home-equity overlay: value grows at homeAppr real, minus the real amortized mortgage balance
+    // home-equity overlay: NET sale proceeds - value grown at homeAppr, minus ~6% selling costs, minus the mortgage balance
     if (owned) {
       const own = age - cfg.homeAge;
       const val = cfg.homePrice * Math.pow(1 + cfg.homeAppr / 100, own);
-      homeEq.push(val - mtgRealBalance(cfg, own));
+      homeEq.push(val * 0.94 - mtgRealBalance(cfg, own));
     } else homeEq.push(0);
   }
   return { contribs, outflows, spendInfo, kidCosts, houseCosts, rentCosts, homeEq, years };
@@ -226,7 +233,8 @@ function runSim(sc, cfg) {
     const age = cfg.startAge + y;
     if (cfg.homeAge > 0 && age >= cfg.homeAge) {
       const k = age - cfg.homeAge;
-      fireTargetY.push(fireTarget + (cfg.homePrice * cfg.homeCarryPct / 100) / (cfg.swr / 100) + mtgRealBalance(cfg, k));
+      const curVal = cfg.homePrice * Math.pow(1 + cfg.homeAppr / 100, k);
+      fireTargetY.push(fireTarget + (curVal * cfg.homeCarryPct / 100) / (cfg.swr / 100) + mtgRealBalance(cfg, k));
     } else {
       // renters with explicit rent must fund that year's rent as a perpetuity too (understates future rent growth; documented)
       fireTargetY.push(fireTarget + rentCosts[y] / (cfg.swr / 100));
@@ -586,12 +594,12 @@ function controlsGuide() {
   ${e("College fund (0/1)", "1 sets aside a $120K lump per child when that child turns 18 (in-state 4-year estimate).")}
   ${e("Buy home at age (0=never)", "0 keeps you renting forever. An age triggers a purchase that year.")}
   ${e("Home price", "purchase price, up to $5M for Bay Area / NYC-metro planning. The down payment plus ~3% closing costs leave your portfolio in the purchase year; the mortgage payment and carry costs are then AUTO-COMPUTED (see the assumptions box for the monthly number), so you no longer estimate housing costs yourself.")}
-  ${e("Down payment (100 = all cash)", "percent of the price paid up front (first-time median is ~9-10%). At 100 there is no mortgage at all: the full price + 3% closing leaves the portfolio in the purchase year. Sweep this against mortgage term to test cash-vs-leverage for FIRE.")}
+  ${e("Down payment (100 = all cash)", "percent of the price paid up front (first-time median is ~9-10%). Below 20%, PMI (~0.6%/yr of the balance) is auto-charged until the balance amortizes under 80% of the original price. At 100 there is no mortgage at all: the full price + 3% closing leaves the portfolio in the purchase year. Sweep this against mortgage term to test cash-vs-leverage for FIRE.")}
   ${e("Mortgage term (yrs)", "10 / 15 / 20 / 25 / 30. Payment is the standard amortization formula on the financed amount; shorter terms = higher payment, faster equity, earlier payoff cliff in your spend.")}
   ${e("Mortgage rate (nominal)", "the quoted 30-yr-style rate. The fixed nominal payment is converted to real dollars by deflating with the inflation setting, so the payment's real burden falls ~2-3%/yr, which is a genuine benefit of a mortgage the old flat-spend model missed. Not modeled: the mortgage-interest deduction (conservative).")}
-  ${e("Carry: tax+ins+upkeep /yr", "property tax + insurance + maintenance as a percent of home value, auto-added every owned year FOREVER (unlike the mortgage, carry never pays off). ~2% is a national planning norm; NJ/NY-metro property tax alone can push 2.5-3%.")}
+  ${e("Carry: tax+ins+upkeep /yr", "property tax + insurance + maintenance as a percent of the home's CURRENT (appreciated) value, so this cost grows with the house, auto-added every owned year FOREVER (unlike the mortgage, carry never pays off). ~2% is a national planning norm; NJ/NY-metro property tax alone can push 2.5-3%. Assessment-capped states (CA Prop 13; MD homestead caps) reassess slower than market: model those with a lower carry percent.")}
   ${e("Non-housing spend /wk after buy", "YOUR number: normal living spend (food, travel, life) once you own. Housing costs are added on top automatically, replacing the old all-in guess.")}
-  ${e("Home appreciation (real)", "yearly real growth of the home's value. Home equity (value minus the real amortized mortgage balance) shows up in the dashed total-NW overlay, but NEVER counts toward the FIRE trigger: you can't eat a house. The FIRE bar itself rises while you own: carry costs as a perpetuity plus the remaining mortgage balance, so no path retires unable to keep the house.")}
+  ${e("Home appreciation (real)", "yearly real growth of the home's value. US long-run reality is ~0.5-1% real (Shiller: ~0.6% since 1890); supply-constrained metros (Bay Area, NYC) have run 1.5-2%+ but with deeper crashes; 0 is the conservative planning number at today's elevated price-to-income levels. Appreciation is partly SELF-TAXING here: carry costs scale with the appreciated value. Home equity (value net of ~6% selling costs, minus the mortgage balance) shows up in the dashed total-NW overlay, but NEVER counts toward the FIRE trigger: you can't eat a house. The FIRE bar itself rises while you own: current-value carry as a perpetuity plus the remaining mortgage balance, so no path retires unable to keep the house.")}
   ${g("Partner (purple scenario only)")}
   ${e("Partner joins at age", "when partner finances merge. Only the purple 'Turing + partner' scenario uses any of these; the green/gold scenarios stay single.")}
   ${e("Partner gross salary", "partner's gross pay. It is taxed separately (single-filer approximation; no partner 401k/HSA modeled), and what remains after their added spend flows into the joint portfolio each working year until retirement.")}

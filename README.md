@@ -9,6 +9,12 @@ v6 (2026-07-20): income+tax model (MD/Howard Co), private-equity module (cliff/m
 - Controls guide: collapsible "What each control means" section under the control panel, plain-English explanation for all 29 controls grouped by panel.
 - (v7 carry: starting NW default corrected to $290K; live site shows this only after push.)
 
+## v8.6 (2026-07-23)
+- Carry costs (tax+insurance+upkeep) now scale with the APPRECIATED home value, not the purchase price - property tax reassessments and maintenance track what the home is worth. Assessment-capped states (CA Prop 13, MD homestead): use a lower carry pct. The owner's per-year FIRE bar uses current-value carry too.
+- PMI: ~0.6%/yr of the mortgage balance auto-charged when down payment < 20%, until the nominal balance amortizes below 80% of the original price. (The 5%-down sweeps in earlier analysis were undercharged.)
+- Home-equity overlay is now NET sale proceeds: value x 0.94 (6% selling costs) minus balance; can be negative early on low-down purchases (honestly underwater).
+- Guide: homeAppr context (US long-run ~0.5-1% real, Shiller ~0.6%; constrained metros higher with deeper crashes; 0 = conservative today), appreciation partly self-taxing via carry.
+
 ## v8.5 (2026-07-23)
 - Explicit rent (`rentWk`, 0 = legacy embedded mode) + real rent growth (`rentGrowthPct` default 0.75%/yr): rent becomes a first-class cost that grows in real terms, continues through retirement (added to withdrawals and the renter's per-year FIRE bar as that year's perpetuity), ends at a home purchase, and is guardrail-cuttable (renters can downsize; mortgages can't be cut). Fixes the rent-vs-own comparison bias: the old rent baseline implied a ~$1,265/mo apartment against a $1.2M house, and ignored that rent outpaces inflation while a fixed mortgage shrinks in real terms and dies.
 - Same-quality recipe documented in the guide: rent = price / (price-to-rent 20-25) / 52, with moveOutSpendWk and fireSpend kept non-housing and identical across the rent/own bookmarks.
