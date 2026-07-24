@@ -29,7 +29,11 @@ const D = {
   retHealthAnnual: 12000, // pre-Medicare (under-65) health cost in retirement: ACA premium + OOP; added to spend AND the FIRE target
   ssAnnual: 25000, ssAge: 67, // Social Security offset from ssAge; ~PIA for 15 max-taxable years, haircut ~25% for trust-fund risk; 0 = exclude
   guardrails: 1, grCutPct: 15, // spend-flexibility: cut withdrawals grCutPct% while the portfolio sits below 85% of its retirement-day value; 0 = robot retiree who never adjusts
-  partnerAnnual: 40500,
+  // partner (applies ONLY to the "Turing + partner" scenario)
+  partnerAge: 30,          // age partner finances merge
+  partnerIncome: 100000,   // partner gross salary; taxed separately (single-filer approx, no partner 401k modeled)
+  partnerSpendWk: 400,     // added household spending while partner present (they eat/travel too)
+  partnerRetSpend: 20000,  // added annual retirement spend for two; also raises the partner scenario's FIRE target
   // equity - HONEST defaults: no refresh program promised in the letter, liquidity never (0) so
   // every headline FIRE number is truly cash-comp-only; slide liqYear/refreshAnnual up to model upside
   grant: 700000, refreshAnnual: 0, eqMu: 15, eqSigma: 50, eqFailPct: 4,
@@ -91,6 +95,20 @@ function incomeModel(gross, spendWk, cfg) {
   return { gross, net, spend, invested: k401 + hsaTotal + Math.max(0, net - spend) };
 }
 
+// partner's net annual contribution: own income taxed separately (single-filer approx,
+// no partner 401k/HSA modeled) minus their added household spend. Can be negative.
+function partnerNetAnnual(cfg) {
+  const inc = cfg.partnerIncome || 0;
+  let net = 0;
+  if (inc > 0) {
+    const taxable = Math.max(0, inc - STD_DEDUCTION);
+    const fed = fedTax(taxable), state = taxable * (MD_RATE + HOCO_RATE);
+    const fica = Math.min(inc, SS_CAP) * 0.062 + inc * 0.0145 + Math.max(0, inc - 200000) * 0.009;
+    net = inc - fed - state - fica;
+  }
+  return net - (cfg.partnerSpendWk || 0) * 52;
+}
+
 // ===== RNG =====
 function randn() {
   let u = 0, v = 0;
@@ -132,7 +150,7 @@ function buildSchedules(sc, cfg) {
       const ote = (cfg.base + cfg.varTarget * att + (cfg.promoYear > 0 && y >= cfg.promoYear ? cfg.promoJump : 0)) * Math.pow(1 + g, y);
       const inc = incomeModel(ote, spendWk, cfg);
       let c = inc.invested;
-      if (sc.partner && age >= 30) c += cfg.partnerAnnual;
+      if (sc.partner && age >= cfg.partnerAge) c += partnerNetAnnual(cfg);
       contribs.push(c);
     }
     outflows.push(extra);
@@ -157,8 +175,9 @@ function runSim(sc, cfg) {
   const spyMean = usMu - consAdj;
   const vxusMean = usMu - 0.025 - consAdj;
   const bootShift = usMu - 0.07 - consAdj;
-  // FIRE target funds retirement spend PLUS pre-65 healthcare (the expensive early years set the bar)
-  const fireTarget = (cfg.fireSpend + cfg.retHealthAnnual) / (cfg.swr / 100);
+  // FIRE target funds retirement spend PLUS pre-65 healthcare (the expensive early years set the bar);
+  // the partner scenario also funds the partner's added retirement spend
+  const fireTarget = (cfg.fireSpend + cfg.retHealthAnnual + (sc.partner ? cfg.partnerRetSpend : 0)) / (cfg.swr / 100);
   const drag = cfg.divDrag / 100;
   const wdGross = 1 + cfg.wdTax / 100;
   const pLoss = (cfg.jobLossPct || 0) / 100;
@@ -219,7 +238,7 @@ function runSim(sc, cfg) {
           nw = nw * (1 + r) + c * (1 + r / 2);
         } else {
           // withdrawal: spend + pre-65 healthcare + any kid costs, grossed up for tax, less Social Security
-          let need = (cfg.fireSpend + (age < 65 ? cfg.retHealthAnnual : 0) + kidCosts[y]) * wdGross;
+          let need = (cfg.fireSpend + (age < 65 ? cfg.retHealthAnnual : 0) + kidCosts[y] + (sc.partner ? cfg.partnerRetSpend : 0)) * wdGross;
           // guardrails: while the portfolio sits below 85% of its retirement-day value, cut spending
           if (cfg.guardrails && nw < 0.85 * retNW) need *= 1 - cfg.grCutPct / 100;
           const wd = Math.max(0, need - (age >= cfg.ssAge ? cfg.ssAnnual : 0));
@@ -459,12 +478,12 @@ function scenarioDefs() {
   return [
     { key: "hist", label: "Turing (historical)", color: "#34d399", returns: "hist", partner: false, studient: false, equity: true },
     { key: "cons", label: "Turing (conservative)", color: "#fbbf24", returns: "cons", partner: false, studient: false, equity: true },
-    { key: "partner", label: "Turing + partner @30", color: "#818cf8", returns: "hist", partner: true, studient: false, equity: true },
+    { key: "partner", label: `Turing + partner @${CFG.partnerAge}`, color: "#818cf8", returns: "hist", partner: true, studient: false, equity: true },
     { key: "studient", label: "Studient baseline", color: "#f472b6", returns: "hist", partner: false, studient: true, equity: false },
   ];
 }
 
-const SLIDER_IDS = ["attainment", "compGrowth", "promoYear", "promoJump", "jobLossPct", "hsaAnnual", "homeSpendWk", "moveOutAge", "moveOutSpendWk", "fireSpend", "swr", "retireAge", "wdTax", "retHealthAnnual", "ssAnnual", "ssAge", "guardrails", "grCutPct", "chartAge", "logScale", "startingNW", "grant", "grant2", "grant2Year", "refreshAnnual", "eqMu", "eqSigma", "eqFailPct", "eqMktCorr", "liqYear", "haircut", "eqTax", "kids", "kidAge", "college", "homeAge", "homePrice", "homeDownPct", "homePostSpendWk", "homeAppr", "divDrag", "usMu"];
+const SLIDER_IDS = ["attainment", "compGrowth", "promoYear", "promoJump", "jobLossPct", "hsaAnnual", "homeSpendWk", "moveOutAge", "moveOutSpendWk", "fireSpend", "swr", "retireAge", "wdTax", "retHealthAnnual", "ssAnnual", "ssAge", "guardrails", "grCutPct", "chartAge", "logScale", "partnerAge", "partnerIncome", "partnerSpendWk", "partnerRetSpend", "startingNW", "grant", "grant2", "grant2Year", "refreshAnnual", "eqMu", "eqSigma", "eqFailPct", "eqMktCorr", "liqYear", "haircut", "eqTax", "kids", "kidAge", "college", "homeAge", "homePrice", "homeDownPct", "homePostSpendWk", "homeAppr", "divDrag", "usMu"];
 
 function ctlHtml() {
   const c = CFG;
@@ -473,7 +492,8 @@ function ctlHtml() {
   const grp = (title, inner) => `<div style="grid-column:1/-1;color:#22d3ee;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;border-top:1px solid #1a2035;padding-top:10px;margin-top:4px">${title}</div>${inner}`;
   return `<div class="controls"><h3>Controls (re-run after changing)</h3><div class="ctl-grid">
   ${grp("Income", s("attainment", "Variable attainment", 0, 150, 5, "%") + s("compGrowth", "Real comp growth /yr", 0, 8, 0.5, "%") + s("promoYear", "Promo year (0=off)", 0, 10, 1) + s("promoJump", "Promo OTE jump", 0, 150000, 10000) + s("jobLossPct", "Job-loss chance /yr", 0, 10, 0.5, "%") + s("hsaAnnual", "HSA total /yr (0=none)", 0, 8750, 50))}
-  ${grp("Spending + life events", s("homeSpendWk", "Spend at home /wk", 300, 1500, 25) + s("moveOutAge", "Move-out age", 26, 40, 1) + s("moveOutSpendWk", "Rent spend /wk", 600, 3000, 25) + s("kids", "Children", 0, 3, 1) + s("kidAge", "First child at age", 27, 42, 1) + s("college", "College fund (0/1)", 0, 1, 1) + s("homeAge", "Buy home at age (0=never)", 0, 45, 1) + s("homePrice", "Home price", 300000, 1200000, 25000) + s("homeDownPct", "Down payment", 5, 30, 1, "%") + s("homePostSpendWk", "Post-purchase spend /wk", 800, 3500, 50) + s("homeAppr", "Home appreciation (real)", 0, 3, 0.25, "%"))}
+  ${grp("Spending + life events", s("homeSpendWk", "Spend at home /wk", 300, 1500, 25) + s("moveOutAge", "Move-out age", 26, 40, 1) + s("moveOutSpendWk", "Rent spend /wk", 600, 3000, 25) + s("kids", "Children", 0, 3, 1) + s("kidAge", "First child at age", 27, 42, 1) + s("college", "College fund (0/1)", 0, 1, 1) + s("homeAge", "Buy home at age (0=never)", 0, 45, 1) + s("homePrice", "Home price", 300000, 5000000, 50000) + s("homeDownPct", "Down payment", 5, 30, 1, "%") + s("homePostSpendWk", "Post-purchase spend /wk", 800, 9000, 50) + s("homeAppr", "Home appreciation (real)", 0, 3, 0.25, "%"))}
+  ${grp("Partner (purple scenario only)", s("partnerAge", "Partner joins at age", 26, 40, 1) + s("partnerIncome", "Partner gross salary", 0, 300000, 10000) + s("partnerSpendWk", "Partner added spend /wk", 0, 1500, 25) + s("partnerRetSpend", "Partner retirement spend /yr", 0, 60000, 5000))}
   ${grp("Equity", s("grant", "Initial grant", 0, 1200000, 50000) + s("grant2", "Promo grant (0=none)", 0, 1500000, 50000) + s("grant2Year", "Promo grant at service yr", 1, 10, 1) + s("refreshAnnual", "Refresh grant /yr (from yr 2)", 0, 350000, 25000) + s("eqMu", "Valuation growth mu", -20, 40, 5, "%") + s("eqSigma", "Valuation sigma", 20, 90, 5, "%") + s("eqFailPct", "Company failure /yr", 0, 15, 1, "%") + s("eqMktCorr", "Equity-market correlation", 0, 0.9, 0.1) + s("liqYear", "Liquidity yr (0=never)", 0, 15, 1) + s("haircut", "Liquidity haircut", 0, 60, 5, "%") + s("eqTax", "Equity tax", 20, 50, 5, "%"))}
   ${grp("Market + retirement", `<div class="ctl"><label>Return model</label><select id="returnModel">
     <option value="normal"${c.returnModel === "normal" ? " selected" : ""}>Normal (iid)</option>
@@ -505,10 +525,15 @@ function controlsGuide() {
   ${e("First child at age", "your age when the first child arrives; siblings follow every 2 years.")}
   ${e("College fund (0/1)", "1 sets aside a $120K lump per child when that child turns 18 (in-state 4-year estimate).")}
   ${e("Buy home at age (0=never)", "0 keeps you renting forever. An age triggers a purchase that year.")}
-  ${e("Home price", "purchase price. The down payment plus ~3% closing costs leave your portfolio in the purchase year.")}
+  ${e("Home price", "purchase price, up to $5M for Bay Area / NYC-metro planning. The down payment plus ~3% closing costs leave your portfolio in the purchase year. Sanity-check the post-purchase spend against the price: a $5M house at 20% down is roughly a $25K/month mortgage alone, so $6-8K+/wk all-in.")}
   ${e("Down payment", "percent of the price paid up front (first-time median is ~9-10%).")}
   ${e("Post-purchase spend /wk", "weekly spending after buying (mortgage, taxes, upkeep, life). Replaces the rent number.")}
   ${e("Home appreciation (real)", "yearly real growth of the home's value. Home equity (value minus remaining mortgage, 30-yr straight-line paydown) shows up in the dashed total-NW overlay, but NEVER counts toward the FIRE trigger: you can't eat a house.")}
+  ${g("Partner (purple scenario only)")}
+  ${e("Partner joins at age", "when partner finances merge. Only the purple 'Turing + partner' scenario uses any of these; the green/gold scenarios stay single.")}
+  ${e("Partner gross salary", "partner's gross pay. It is taxed separately (single-filer approximation; no partner 401k/HSA modeled), and what remains after their added spend flows into the joint portfolio each working year until retirement.")}
+  ${e("Partner added spend /wk", "the extra household spending a second person brings while working. If net salary minus this is negative, the partner is a net cost, which the model allows.")}
+  ${e("Partner retirement spend /yr", "extra annual retirement spending for two, added to every retired-year withdrawal AND to the partner scenario's FIRE target. NOT modeled on purpose: partner's own Social Security, assets, or pension, which would all help; the partner scenario is conservative on that side.")}
   ${g("Equity")}
   ${e("Initial grant", "the $700K RSU grant at the Series E-1 price. It counts $0 toward FIRE unless a liquidity event happens; until then it is only the dashed overlay line.")}
   ${e("Promo grant (0=none)", "a ONE-TIME new RSU grant at the chosen service year, stacked on top of the initial grant with its own cliff-then-25%/yr vest. This is the control for 'if I'm promoted to Staff at year 4, expect ~$1M given $700K at Senior.' Default 0: no promo grant is promised. Note the initial grant doesn't expire at year 4 (it finishes VESTING then; the 10-year double-trigger expiry is part of the failure slider).")}
@@ -565,9 +590,16 @@ function assumptionsBox() {
   const c = CFG;
   const att = c.attainment / 100;
   const inc = incomeModel(c.base + c.varTarget * att, c.homeSpendWk, c);
-  return `<div class="box"><div class="bt">Assumptions (planning estimates, real dollars)</div>
+  // inert-setting warnings: settings that silently do nothing without their enabling control
+  const warns = [];
+  if (c.promoJump !== D.promoJump && !c.promoYear) warns.push(`Promo OTE jump is set (${fmt(c.promoJump)}) but "Promo year" = 0, so NO promotion ever fires`);
+  if (!c.homeAge && (c.homePrice !== D.homePrice || c.homePostSpendWk !== D.homePostSpendWk || c.homeDownPct !== D.homeDownPct || c.homeAppr !== D.homeAppr)) warns.push(`Home settings are customized but "Buy home at age" = 0, so NO home is ever bought`);
+  if (c.grant2 > 0 && c.liqYear > 0 && c.grant2Year > c.liqYear) warns.push(`Promo grant lands at yr ${c.grant2Year}, after liquidity at yr ${c.liqYear}, so it never pays`);
+  const warnHtml = warns.length ? `<div style="color:#fbbf24;font-weight:600;margin-bottom:6px">${warns.map(w => "WARNING: " + w).join("<br>")}</div>` : "";
+  return `<div class="box"><div class="bt">Assumptions (planning estimates, real dollars)</div>${warnHtml}
   Income: $225K base + $75K x ${c.attainment}% | real growth ${c.compGrowth}%/yr${c.promoYear ? ` | promo +${fmt(c.promoJump)} at yr ${c.promoYear}` : ""} | job-loss ${c.jobLossPct}%/yr (6-mo gap) | 401k $24.5K no match | HSA ${c.hsaAnnual ? fmt(c.hsaAnnual) + " (incl. $1,237 employer, FICA-exempt)" : "off"} | 2026 fed + MD + Howard Co + FICA | invested yr-1: <b style="color:#22d3ee">${fmt(inc.invested)}</b><br>
   Life: ${c.kids ? `${c.kids} kid(s) from age ${c.kidAge} ($34K/yr yrs 0-5, $18K/yr 6-17${c.college ? ", $120K college" : ""})` : "no kids modeled"} | ${c.homeAge ? `home at ${c.homeAge} (${fmt(c.homePrice)}, ${c.homeDownPct}%+3% out, then $${c.homePostSpendWk}/wk)` : "no home purchase"} | move-out ${c.moveOutAge}<br>
+  Partner (purple scenario): joins at ${c.partnerAge} | gross ${fmt(c.partnerIncome)} taxed separately | adds $${c.partnerSpendWk}/wk spend while working -> net contribution ${fmt(partnerNetAnnual(c))}/yr | +${fmt(c.partnerRetSpend)}/yr retirement spend (raises that scenario's FIRE target; partner's own SS/assets NOT counted)<br>
   Market: ${c.returnModel === "bootstrap" ? "HISTORICAL 5-yr block bootstrap 1970-2024 (real, correlated, mean-reverting)" : c.returnModel === "t" ? "Student-t df5 fat tails" : "iid normal"} | 2/3 US (mu ${c.usMu}% real) + 1/3 intl (mu ${(c.usMu - 2.5).toFixed(1)}%)${c.returnModel === "bootstrap" && c.usMu !== 7 ? ` | bootstrap shifted ${c.usMu > 7 ? "+" : ""}${(c.usMu - 7).toFixed(1)}pts` : ""} | conservative scenario: both sleeves -2.5pts | dividend drag ${c.divDrag}%/yr<br>
   Equity: ${fmt(c.grant)}${c.grant2 > 0 ? ` + ${fmt(c.grant2)} promo grant at yr ${c.grant2Year}` : ""} + ${fmt(c.refreshAnnual)}/yr refresh from yr 2 (2024-25 norm ~20-25% of initial) | cliff+monthly | mu ${c.eqMu}% sig ${c.eqSigma}% | fail ${c.eqFailPct}%/yr | liquidity yr ${c.liqYear || "never"} (-${c.haircut}% -${c.eqTax}%) | refreshes stop at liquidity/retirement; double-trigger RSU assumed<br>
   Retirement: ${c.retireAge ? "retire at FIRE, no earlier than " + c.retireAge : "retire when FIRE"} | withdraw ($${(c.fireSpend / 1000)}K + $${(c.retHealthAnnual / 1000)}K health pre-65 + kid costs) x (1+${c.wdTax}%) minus SS ${c.ssAnnual ? fmt(c.ssAnnual) + " from " + c.ssAge : "off"} | guardrails ${c.guardrails ? `ON (-${c.grCutPct}% spend below 85% of retire-day NW)` : "OFF (fixed real withdrawal, never adjusts)"} | FIRE target ${fmt((c.fireSpend + c.retHealthAnnual) / (c.swr / 100))} at ${c.swr}% | ERN context: fail-safe ~3.25% for 50-60yr horizons<br>

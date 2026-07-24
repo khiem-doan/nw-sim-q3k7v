@@ -9,6 +9,11 @@ v6 (2026-07-20): income+tax model (MD/Howard Co), private-equity module (cliff/m
 - Controls guide: collapsible "What each control means" section under the control panel, plain-English explanation for all 29 controls grouped by panel.
 - (v7 carry: starting NW default corrected to $290K; live site shows this only after push.)
 
+## v8.3 (2026-07-23)
+- Partner section (purple scenario only), replacing the flat partnerAnnual=$40.5K: `partnerAge` (30), `partnerIncome` ($100K gross, taxed separately, single-filer approx, no partner 401k), `partnerSpendWk` ($400 added household spend), `partnerRetSpend` ($20K/yr added retirement spend, also raises that scenario's FIRE target). Partner's own SS/assets deliberately not counted. Scenario label tracks partnerAge.
+- Home price slider to $5M (Bay Area / NYC planning); post-purchase spend slider to $9K/wk; guide sanity note (a $5M house at 20% down is ~$25K/mo mortgage alone).
+- Inert-setting WARNINGS in the assumptions box: promoJump set with promoYear=0; home settings customized with homeAge=0 (never buys); promo grant landing after liquidity. Catches silently-dead URL params.
+
 ## v8.2 (2026-07-23)
 - Log-scale fan charts (`logScale` default ON): log y-axis with 1-2.5-5 gridlines and a $100K floor, so the median stays readable when the 90th percentile runs to $50M+. 0 = linear.
 - Promo grant (`grant2` default 0, `grant2Year` default 4): a ONE-TIME stacked RSU grant at a chosen service year with the same cliff-then-25%/yr vest, for modeling e.g. a $1M Staff-promotion grant at year 4. Distinct from `refreshAnnual` (an every-year program). Clarified in the guide: the initial grant finishes vesting at year 4, it does not expire then; the 10-yr double-trigger expiry lives in the failure slider.
