@@ -9,6 +9,12 @@ v6 (2026-07-20): income+tax model (MD/Howard Co), private-equity module (cliff/m
 - Controls guide: collapsible "What each control means" section under the control panel, plain-English explanation for all 29 controls grouped by panel.
 - (v7 carry: starting NW default corrected to $290K; live site shows this only after push.)
 
+## v8.4 (2026-07-23)
+- Real mortgage model, replacing the all-in homePostSpendWk guess: `mtgYears` (10-30), `mtgRate` (nominal, default 6.5%), payment auto-computed via standard amortization and deflated to real dollars by `inflPct` (2.5%), so the real burden falls each year and ENDS at payoff. `homeCarryPct` (2%/yr of value: tax+insurance+upkeep, never ends) auto-added. `homeExtraSpendWk` is the user's NON-housing spend. The assumptions box prints the monthly mortgage, carry, and all-in year-1 number.
+- Mortgage in retirement done right: house costs are charged in retired years, guardrail cuts CANNOT touch them (fixed obligation), and the per-year FIRE bar rises while owned (carry perpetuity + remaining mortgage balance). Home-equity overlay now uses the real amortized balance.
+- Probabilistic liquidity: `liqProbPct` (annual exit chance from yr 2, overrides liqYear when set) models the exit-or-nothing binary honestly - some sim lives get the exit, others never do. ~7%/yr = coin flip by yr 10. MID not modeled (conservative).
+- New warnings: liqProbPct overriding liqYear; inert-home check updated to the new fields.
+
 ## v8.3 (2026-07-23)
 - Partner section (purple scenario only), replacing the flat partnerAnnual=$40.5K: `partnerAge` (30), `partnerIncome` ($100K gross, taxed separately, single-filer approx, no partner 401k), `partnerSpendWk` ($400 added household spend), `partnerRetSpend` ($20K/yr added retirement spend, also raises that scenario's FIRE target). Partner's own SS/assets deliberately not counted. Scenario label tracks partnerAge.
 - Home price slider to $5M (Bay Area / NYC planning); post-purchase spend slider to $9K/wk; guide sanity note (a $5M house at 20% down is ~$25K/mo mortgage alone).
