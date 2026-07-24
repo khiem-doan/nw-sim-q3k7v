@@ -16,7 +16,7 @@
 
 // ===== defaults =====
 const D = {
-  startAge: 25, endAge: 90, chartAge: 60,
+  startAge: 25, endAge: 90, chartAge: 80, // chartAge: how far the fan charts draw (sim always runs to endAge)
   startingNW: 290000,
   base: 225000, varTarget: 75000, attainment: 75, // 75 default: bonus is discretionary with zero attainment history; 100 is the upside case, not the base case
   k401: 24500, // 2026 employee limit (Turing portal)
@@ -28,6 +28,7 @@ const D = {
   fireSpend: 100000, swr: 3.5, retireAge: 38, wdTax: 8, // retireAge 0 = retire at FIRE; default 38 per plan (cushion years past the number)
   retHealthAnnual: 12000, // pre-Medicare (under-65) health cost in retirement: ACA premium + OOP; added to spend AND the FIRE target
   ssAnnual: 25000, ssAge: 67, // Social Security offset from ssAge; ~PIA for 15 max-taxable years, haircut ~25% for trust-fund risk; 0 = exclude
+  guardrails: 1, grCutPct: 15, // spend-flexibility: cut withdrawals grCutPct% while the portfolio sits below 85% of its retirement-day value; 0 = robot retiree who never adjusts
   partnerAnnual: 40500,
   // equity - HONEST defaults: no refresh program promised in the letter, liquidity never (0) so
   // every headline FIRE number is truly cash-comp-only; slide liqYear/refreshAnnual up to model upside
@@ -171,7 +172,7 @@ function runSim(sc, cfg) {
 
   const paths = [], totalPaths = [], fireAges = [], retireYears = [], ruinAges = [];
   for (let sim = 0; sim < cfg.sims; sim++) {
-    let nw = cfg.startingNW, fireAge = null, retired = false, retiredYear = null, ruined = false, ruinAge = null;
+    let nw = cfg.startingNW, fireAge = null, retired = false, retiredYear = null, ruined = false, ruinAge = null, retNW = 0;
     let eqMult = 1, eqDead = !sc.equity, eqMerged = false;
     // bootstrap sequence for this sim
     let seq = null;
@@ -204,7 +205,7 @@ function runSim(sc, cfg) {
       if (!retired) {
         // retire at the LATER of hitting the FIRE number and the earliest-retire age (never retire under-funded)
         const trigger = (fireAge !== null) && (cfg.retireAge === 0 || age >= cfg.retireAge);
-        if (trigger) { retired = true; retiredYear = y; }
+        if (trigger) { retired = true; retiredYear = y; retNW = nw; }
       }
 
       if (!ruined) {
@@ -216,7 +217,9 @@ function runSim(sc, cfg) {
           nw = nw * (1 + r) + c * (1 + r / 2);
         } else {
           // withdrawal: spend + pre-65 healthcare + any kid costs, grossed up for tax, less Social Security
-          const need = (cfg.fireSpend + (age < 65 ? cfg.retHealthAnnual : 0) + kidCosts[y]) * wdGross;
+          let need = (cfg.fireSpend + (age < 65 ? cfg.retHealthAnnual : 0) + kidCosts[y]) * wdGross;
+          // guardrails: while the portfolio sits below 85% of its retirement-day value, cut spending
+          if (cfg.guardrails && nw < 0.85 * retNW) need *= 1 - cfg.grCutPct / 100;
           const wd = Math.max(0, need - (age >= cfg.ssAge ? cfg.ssAnnual : 0));
           nw = nw * (1 + r) - wd;
         }
@@ -313,7 +316,8 @@ function fanChart(res, title, color) {
   const pcts = [0.1, 0.25, 0.5, 0.75, 0.9];
   const op = { 0.1: 0.2, 0.25: 0.35, 0.5: 1, 0.75: 0.35, 0.9: 0.2 };
   const wd = { 0.1: 1, 0.25: 1.5, 0.5: 3, 0.75: 1.5, 0.9: 1 };
-  const W = 760, H = 370, P = { t: 30, r: 30, b: 50, l: 82 };
+  const pctLab = { 0.1: "10th", 0.25: "25th", 0.5: "MEDIAN", 0.75: "75th", 0.9: "90th" };
+  const W = 760, H = 370, P = { t: 30, r: 86, b: 50, l: 82 };
   const pw = W - P.l - P.r, ph = H - P.t - P.b;
   let maxV = fireTarget * 1.1;
   for (const p of pcts) for (const v of percentilePaths[p]) if (v > maxV) maxV = v;
@@ -341,6 +345,8 @@ function fanChart(res, title, color) {
     <path d="${band(0.75, 0.25)}" fill="${color}" opacity="0.15"/>
     ${pcts.map(p => `<path d="${pd(percentilePaths[p])}" fill="none" stroke="${color}" stroke-width="${wd[p]}" opacity="${op[p]}"/>`).join("")}
     ${res.sc.equity ? `<path d="${pd(totalMedianPath)}" fill="none" stroke="#22d3ee" stroke-width="2" stroke-dasharray="6 4" opacity="0.9"/>` : ""}
+    ${pcts.map(p => { const d = percentilePaths[p]; return `<text x="${xs(years) + 5}" y="${ys(d[d.length - 1]) + 3}" fill="${color}" opacity="${p === 0.5 ? 1 : 0.55}" font-size="${p === 0.5 ? 10 : 9}" font-weight="${p === 0.5 ? 700 : 400}">${pctLab[p]}</text>`; }).join("")}
+    ${res.sc.equity ? `<text x="${xs(years) + 5}" y="${ys(totalMedianPath[totalMedianPath.length - 1]) - 8}" fill="#22d3ee" font-size="9">+EQ/HOME</text>` : ""}
     ${yT.map(v => `<text x="${P.l - 8}" y="${ys(v) + 4}" text-anchor="end" fill="#5a6a8a" font-size="10">${fmt(v)}</text>`).join("")}
     ${xT.map(y => `<text x="${xs(y)}" y="${H - P.b + 20}" text-anchor="middle" fill="#5a6a8a" font-size="10">Age ${startAge + y}</text>`).join("")}
     <text x="${P.l + 8}" y="${P.t + 16}" fill="#5a6a8a" font-size="9">Bands 10-90 | Dashed cyan: +unrealized equity +home equity (median) | drawdown after retire</text>
@@ -441,7 +447,7 @@ function scenarioDefs() {
   ];
 }
 
-const SLIDER_IDS = ["attainment", "compGrowth", "promoYear", "promoJump", "jobLossPct", "hsaAnnual", "homeSpendWk", "moveOutAge", "moveOutSpendWk", "fireSpend", "swr", "retireAge", "wdTax", "retHealthAnnual", "ssAnnual", "ssAge", "startingNW", "grant", "refreshAnnual", "eqMu", "eqSigma", "eqFailPct", "eqMktCorr", "liqYear", "haircut", "eqTax", "kids", "kidAge", "college", "homeAge", "homePrice", "homeDownPct", "homePostSpendWk", "homeAppr", "divDrag", "usMu"];
+const SLIDER_IDS = ["attainment", "compGrowth", "promoYear", "promoJump", "jobLossPct", "hsaAnnual", "homeSpendWk", "moveOutAge", "moveOutSpendWk", "fireSpend", "swr", "retireAge", "wdTax", "retHealthAnnual", "ssAnnual", "ssAge", "guardrails", "grCutPct", "chartAge", "startingNW", "grant", "refreshAnnual", "eqMu", "eqSigma", "eqFailPct", "eqMktCorr", "liqYear", "haircut", "eqTax", "kids", "kidAge", "college", "homeAge", "homePrice", "homeDownPct", "homePostSpendWk", "homeAppr", "divDrag", "usMu"];
 
 function ctlHtml() {
   const c = CFG;
@@ -456,7 +462,7 @@ function ctlHtml() {
     <option value="normal"${c.returnModel === "normal" ? " selected" : ""}>Normal (iid)</option>
     <option value="t"${c.returnModel === "t" ? " selected" : ""}>Fat tails (Student-t df5)</option>
     <option value="bootstrap"${c.returnModel === "bootstrap" ? " selected" : ""}>Historical block bootstrap</option>
-  </select></div>` + s("usMu", "US real return mu", 3, 11, 0.5, "%") + s("divDrag", "Dividend tax drag /yr", 0, 0.6, 0.05, "%") + s("startingNW", "Starting NW", 200000, 800000, 10000) + s("fireSpend", "FIRE spend $/yr", 50000, 150000, 5000) + s("swr", "SWR", 3, 4.5, 0.25, "%") + s("retireAge", "Earliest retire age (0=at FIRE)", 0, 55, 1) + s("wdTax", "Withdrawal tax gross-up", 0, 25, 1, "%") + s("retHealthAnnual", "Pre-65 health cost /yr", 0, 25000, 1000) + s("ssAnnual", "Social Security /yr (0=none)", 0, 40000, 1000) + s("ssAge", "Social Security age", 62, 70, 1))}
+  </select></div>` + s("usMu", "US real return mu", 3, 11, 0.5, "%") + s("divDrag", "Dividend tax drag /yr", 0, 0.6, 0.05, "%") + s("startingNW", "Starting NW", 200000, 800000, 10000) + s("fireSpend", "FIRE spend $/yr", 50000, 150000, 5000) + s("swr", "SWR", 3, 4.5, 0.25, "%") + s("retireAge", "Earliest retire age (0=at FIRE)", 0, 55, 1) + s("wdTax", "Withdrawal tax gross-up", 0, 25, 1, "%") + s("retHealthAnnual", "Pre-65 health cost /yr", 0, 25000, 1000) + s("ssAnnual", "Social Security /yr (0=none)", 0, 40000, 1000) + s("ssAge", "Social Security age", 62, 70, 1) + s("guardrails", "Guardrails (0/1)", 0, 1, 1) + s("grCutPct", "Guardrail spend cut", 5, 30, 5, "%") + s("chartAge", "Chart to age", 50, 90, 5))}
   </div><div class="btnrow"><button class="run" onclick="rerun()">Re-run 20,000 sims</button>
   <button class="tab" onclick="resetDefaults()">Reset defaults</button>
   <span id="incomepeek" style="font-size:10px;color:#5a6a8a"></span></div></div>`;
@@ -508,6 +514,9 @@ function controlsGuide() {
   ${e("Pre-65 health cost /yr", "yearly pre-Medicare health cost in retirement (ACA premium + out-of-pocket). Retiring at 38 means ~27 years of it. Added to every retired year before 65 AND to the FIRE target, so no path retires unable to afford insurance.")}
   ${e("Social Security /yr (0=none)", "yearly benefit from the SS age onward, subtracted from the withdrawal. Default $25K: a rough PIA for ~15 years of max-taxable earnings, haircut about 25% for trust-fund risk. Set 0 to exclude SS entirely (the old, more conservative behavior).")}
   ${e("Social Security age", "the age the benefit starts. 67 is full retirement age; 70 pays more per year (raise the $ if you model that), 62 less.")}
+  ${e("Guardrails (0/1)", "spend flexibility, the single biggest survival lever. ON: whenever the portfolio sits below 85% of its retirement-day value, spending is cut by the guardrail percentage until it recovers. This models what real retirees do in bad markets. OFF (0) is the robot retiree who withdraws the same real amount through every crash: the most pessimistic behavior assumption.")}
+  ${e("Guardrail spend cut", "how deep the temporary cut goes when the guardrail is breached. 15% of a $112K budget is living on ~$95K in bad years, hardly hardship at these spend levels.")}
+  ${e("Chart to age", "how far the fan charts draw. The simulation ALWAYS runs to 90 regardless; this only zooms the picture. 80 shows the drawdown decades; 50-60 zooms the accumulation race.")}
   </details>`;
 }
 
@@ -541,7 +550,7 @@ function assumptionsBox() {
   Life: ${c.kids ? `${c.kids} kid(s) from age ${c.kidAge} ($34K/yr yrs 0-5, $18K/yr 6-17${c.college ? ", $120K college" : ""})` : "no kids modeled"} | ${c.homeAge ? `home at ${c.homeAge} (${fmt(c.homePrice)}, ${c.homeDownPct}%+3% out, then $${c.homePostSpendWk}/wk)` : "no home purchase"} | move-out ${c.moveOutAge}<br>
   Market: ${c.returnModel === "bootstrap" ? "HISTORICAL 5-yr block bootstrap 1970-2024 (real, correlated, mean-reverting)" : c.returnModel === "t" ? "Student-t df5 fat tails" : "iid normal"} | 2/3 US (mu ${c.usMu}% real) + 1/3 intl (mu ${(c.usMu - 2.5).toFixed(1)}%)${c.returnModel === "bootstrap" && c.usMu !== 7 ? ` | bootstrap shifted ${c.usMu > 7 ? "+" : ""}${(c.usMu - 7).toFixed(1)}pts` : ""} | conservative scenario: both sleeves -2.5pts | dividend drag ${c.divDrag}%/yr<br>
   Equity: ${fmt(c.grant)} + ${fmt(c.refreshAnnual)}/yr refresh from yr 2 (2024-25 norm ~20-25% of initial) | cliff+monthly | mu ${c.eqMu}% sig ${c.eqSigma}% | fail ${c.eqFailPct}%/yr | liquidity yr ${c.liqYear || "never"} (-${c.haircut}% -${c.eqTax}%) | refreshes stop at liquidity/retirement; double-trigger RSU assumed<br>
-  Retirement: ${c.retireAge ? "retire at FIRE, no earlier than " + c.retireAge : "retire when FIRE"} | withdraw ($${(c.fireSpend / 1000)}K + $${(c.retHealthAnnual / 1000)}K health pre-65 + kid costs) x (1+${c.wdTax}%) minus SS ${c.ssAnnual ? fmt(c.ssAnnual) + " from " + c.ssAge : "off"} | FIRE target ${fmt((c.fireSpend + c.retHealthAnnual) / (c.swr / 100))} at ${c.swr}% | ERN context: fail-safe ~3.25% for 50-60yr horizons<br>
+  Retirement: ${c.retireAge ? "retire at FIRE, no earlier than " + c.retireAge : "retire when FIRE"} | withdraw ($${(c.fireSpend / 1000)}K + $${(c.retHealthAnnual / 1000)}K health pre-65 + kid costs) x (1+${c.wdTax}%) minus SS ${c.ssAnnual ? fmt(c.ssAnnual) + " from " + c.ssAge : "off"} | guardrails ${c.guardrails ? `ON (-${c.grCutPct}% spend below 85% of retire-day NW)` : "OFF (fixed real withdrawal, never adjusts)"} | FIRE target ${fmt((c.fireSpend + c.retHealthAnnual) / (c.swr / 100))} at ${c.swr}% | ERN context: fail-safe ~3.25% for 50-60yr horizons<br>
   FIRE = liquid portfolio only; unrealized equity + home equity are the dashed overlay.</div>`;
 }
 

@@ -9,6 +9,12 @@ v6 (2026-07-20): income+tax model (MD/Howard Co), private-equity module (cliff/m
 - Controls guide: collapsible "What each control means" section under the control panel, plain-English explanation for all 29 controls grouped by panel.
 - (v7 carry: starting NW default corrected to $290K; live site shows this only after push.)
 
+## v8.1 (2026-07-23)
+- Guardrails toggle (`guardrails` default ON, `grCutPct` default 15%): while the portfolio sits below 85% of its retirement-day value, retirement spending is cut by the guardrail percentage. Models real retiree behavior; OFF restores the fixed-real-withdrawal robot (most pessimistic).
+- Fan charts: right-edge colored labels on every percentile line (10th/25th/MEDIAN/75th/90th) + a "+EQ/HOME" tag on the dashed overlay; right padding widened to fit.
+- `chartAge` is now a slider (50-90, default 80, was fixed 60): fan charts draw the drawdown decades; the sim always ran to 90.
+- Control labels bumped 10px -> 12px for readability.
+
 ## v8.0 (2026-07-23)
 - 2026 constants corrected: 401k $24,500 (was 23,500), standard deduction $16,100 (was 15,000), SS wage base $184,500 (was 176,100).
 - HSA module: `hsaAnnual` default $4,400 (2026 self-only cap) incl. Turing's $1,237 employer contribution; own portion deducted from income tax AND FICA (payroll/Sec-125 treatment); whole amount lands in invested. Set 0 while on a parents' non-HDHP plan (HSA-ineligible until aged off, Jan 2027).
