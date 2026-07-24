@@ -9,6 +9,10 @@ v6 (2026-07-20): income+tax model (MD/Howard Co), private-equity module (cliff/m
 - Controls guide: collapsible "What each control means" section under the control panel, plain-English explanation for all 29 controls grouped by panel.
 - (v7 carry: starting NW default corrected to $290K; live site shows this only after push.)
 
+## v8.2 (2026-07-23)
+- Log-scale fan charts (`logScale` default ON): log y-axis with 1-2.5-5 gridlines and a $100K floor, so the median stays readable when the 90th percentile runs to $50M+. 0 = linear.
+- Promo grant (`grant2` default 0, `grant2Year` default 4): a ONE-TIME stacked RSU grant at a chosen service year with the same cliff-then-25%/yr vest, for modeling e.g. a $1M Staff-promotion grant at year 4. Distinct from `refreshAnnual` (an every-year program). Clarified in the guide: the initial grant finishes vesting at year 4, it does not expire then; the 10-yr double-trigger expiry lives in the failure slider.
+
 ## v8.1 (2026-07-23)
 - Guardrails toggle (`guardrails` default ON, `grCutPct` default 15%): while the portfolio sits below 85% of its retirement-day value, retirement spending is cut by the guardrail percentage. Models real retiree behavior; OFF restores the fixed-real-withdrawal robot (most pessimistic).
 - Fan charts: right-edge colored labels on every percentile line (10th/25th/MEDIAN/75th/90th) + a "+EQ/HOME" tag on the dashed overlay; right padding widened to fit.

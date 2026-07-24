@@ -33,12 +33,14 @@ const D = {
   // equity - HONEST defaults: no refresh program promised in the letter, liquidity never (0) so
   // every headline FIRE number is truly cash-comp-only; slide liqYear/refreshAnnual up to model upside
   grant: 700000, refreshAnnual: 0, eqMu: 15, eqSigma: 50, eqFailPct: 4,
+  grant2: 0, grant2Year: 4, // one-time promo/refresh grant at service year N (e.g. 1M at yr 4 if promoted to Staff); 0 = off (not promised)
   eqMktCorr: 0.5, // private-company valuation shocks correlate with market cycles; 0 restores independent draws
   liqYear: 0, haircut: 25, eqTax: 45, // 45: double-trigger RSUs settle as ORDINARY income in one lump at liquidity (confirmed by the offer letter); ~47% marginal fed+MD on top of salary, not cap-gains
   // life events
   kids: 0, kidAge: 32, college: 1,
   homeAge: 0, homePrice: 600000, homeDownPct: 10, homePostSpendWk: 1600,
   homeAppr: 1, // real home appreciation %/yr for the home-equity overlay (never in the FIRE trigger)
+  logScale: 1, // 1 = log-scale fan charts (keeps the median readable when the 90th percentile runs to $50M+); 0 = linear
   // market
   returnModel: "normal", // normal | t | bootstrap
   divDrag: 0.4,
@@ -242,6 +244,11 @@ function runSim(sc, cfg) {
           const svc = Math.min(y + 1, retiredYear !== null ? retiredYear + 1 : y + 1);
           // initial grant: cliff yr1 then 25%/yr to 4
           let vestedVal = Math.min(svc >= 4 ? 1 : svc * 0.25, 1) * cfg.grant;
+          // one-time promo grant at service year grant2Year: same cliff-then-25%/yr shape, skipped if retired before it lands
+          if (cfg.grant2 > 0 && svc >= cfg.grant2Year) {
+            const svc2 = svc - cfg.grant2Year + 1;
+            vestedVal += Math.min(1, svc2 * 0.25) * cfg.grant2;
+          }
           // refreshes: granted at service years 2..(retire or liq), each vests /4 monthly no cliff
           const lastGrantYr = Math.min(retiredYear !== null ? retiredYear : years, liqIdx > 0 ? liqIdx : years);
           for (let gY = 2; gY <= lastGrantYr; gY++) {
@@ -322,7 +329,12 @@ function fanChart(res, title, color) {
   let maxV = fireTarget * 1.1;
   for (const p of pcts) for (const v of percentilePaths[p]) if (v > maxV) maxV = v;
   for (const v of totalMedianPath) if (v > maxV) maxV = v;
-  const xs = i => P.l + (i / years) * pw, ys = v => P.t + ph - (v / maxV) * ph;
+  // log scale keeps the median readable when the 90th percentile runs to $50M+; floor $100K (ruined/low paths ride the floor)
+  const useLog = !!CFG.logScale, yMin = 100000;
+  const xs = i => P.l + (i / years) * pw;
+  const ys = useLog
+    ? v => P.t + ph - (Math.log(Math.max(v, yMin) / yMin) / Math.log(maxV / yMin)) * ph
+    : v => P.t + ph - (v / maxV) * ph;
   const pd = d => d.map((v, i) => `${i ? "L" : "M"}${xs(i).toFixed(1)},${ys(v).toFixed(1)}`).join(" ");
   const band = (tp, bp) => {
     const t = percentilePaths[tp], b = percentilePaths[bp];
@@ -330,8 +342,13 @@ function fanChart(res, title, color) {
     for (let i = b.length - 1; i >= 0; i--) d += ` L${xs(i).toFixed(1)},${ys(b[i]).toFixed(1)}`;
     return d + " Z";
   };
-  const yT = []; const step = maxV > 10e6 ? 2e6 : maxV > 5e6 ? 1e6 : 500000;
-  for (let v = 0; v <= maxV; v += step) yT.push(v);
+  const yT = [];
+  if (useLog) {
+    for (const v of [1e5, 2.5e5, 5e5, 1e6, 2e6, 5e6, 1e7, 2e7, 5e7, 1e8, 2e8]) if (v >= yMin && v <= maxV * 1.02) yT.push(v);
+  } else {
+    const step = maxV > 10e6 ? 2e6 : maxV > 5e6 ? 1e6 : 500000;
+    for (let v = 0; v <= maxV; v += step) yT.push(v);
+  }
   const xT = []; for (let y = 0; y <= years; y += 5) xT.push(y);
   const fy = ys(fireTarget), a47 = 47 - startAge;
   return `<div class="chartwrap"><h3 style="color:${color}">${title}</h3>
@@ -447,7 +464,7 @@ function scenarioDefs() {
   ];
 }
 
-const SLIDER_IDS = ["attainment", "compGrowth", "promoYear", "promoJump", "jobLossPct", "hsaAnnual", "homeSpendWk", "moveOutAge", "moveOutSpendWk", "fireSpend", "swr", "retireAge", "wdTax", "retHealthAnnual", "ssAnnual", "ssAge", "guardrails", "grCutPct", "chartAge", "startingNW", "grant", "refreshAnnual", "eqMu", "eqSigma", "eqFailPct", "eqMktCorr", "liqYear", "haircut", "eqTax", "kids", "kidAge", "college", "homeAge", "homePrice", "homeDownPct", "homePostSpendWk", "homeAppr", "divDrag", "usMu"];
+const SLIDER_IDS = ["attainment", "compGrowth", "promoYear", "promoJump", "jobLossPct", "hsaAnnual", "homeSpendWk", "moveOutAge", "moveOutSpendWk", "fireSpend", "swr", "retireAge", "wdTax", "retHealthAnnual", "ssAnnual", "ssAge", "guardrails", "grCutPct", "chartAge", "logScale", "startingNW", "grant", "grant2", "grant2Year", "refreshAnnual", "eqMu", "eqSigma", "eqFailPct", "eqMktCorr", "liqYear", "haircut", "eqTax", "kids", "kidAge", "college", "homeAge", "homePrice", "homeDownPct", "homePostSpendWk", "homeAppr", "divDrag", "usMu"];
 
 function ctlHtml() {
   const c = CFG;
@@ -457,12 +474,12 @@ function ctlHtml() {
   return `<div class="controls"><h3>Controls (re-run after changing)</h3><div class="ctl-grid">
   ${grp("Income", s("attainment", "Variable attainment", 0, 150, 5, "%") + s("compGrowth", "Real comp growth /yr", 0, 8, 0.5, "%") + s("promoYear", "Promo year (0=off)", 0, 10, 1) + s("promoJump", "Promo OTE jump", 0, 150000, 10000) + s("jobLossPct", "Job-loss chance /yr", 0, 10, 0.5, "%") + s("hsaAnnual", "HSA total /yr (0=none)", 0, 8750, 50))}
   ${grp("Spending + life events", s("homeSpendWk", "Spend at home /wk", 300, 1500, 25) + s("moveOutAge", "Move-out age", 26, 40, 1) + s("moveOutSpendWk", "Rent spend /wk", 600, 3000, 25) + s("kids", "Children", 0, 3, 1) + s("kidAge", "First child at age", 27, 42, 1) + s("college", "College fund (0/1)", 0, 1, 1) + s("homeAge", "Buy home at age (0=never)", 0, 45, 1) + s("homePrice", "Home price", 300000, 1200000, 25000) + s("homeDownPct", "Down payment", 5, 30, 1, "%") + s("homePostSpendWk", "Post-purchase spend /wk", 800, 3500, 50) + s("homeAppr", "Home appreciation (real)", 0, 3, 0.25, "%"))}
-  ${grp("Equity", s("grant", "Initial grant", 0, 1200000, 50000) + s("refreshAnnual", "Refresh grant /yr (from yr 2)", 0, 350000, 25000) + s("eqMu", "Valuation growth mu", -20, 40, 5, "%") + s("eqSigma", "Valuation sigma", 20, 90, 5, "%") + s("eqFailPct", "Company failure /yr", 0, 15, 1, "%") + s("eqMktCorr", "Equity-market correlation", 0, 0.9, 0.1) + s("liqYear", "Liquidity yr (0=never)", 0, 15, 1) + s("haircut", "Liquidity haircut", 0, 60, 5, "%") + s("eqTax", "Equity tax", 20, 50, 5, "%"))}
+  ${grp("Equity", s("grant", "Initial grant", 0, 1200000, 50000) + s("grant2", "Promo grant (0=none)", 0, 1500000, 50000) + s("grant2Year", "Promo grant at service yr", 1, 10, 1) + s("refreshAnnual", "Refresh grant /yr (from yr 2)", 0, 350000, 25000) + s("eqMu", "Valuation growth mu", -20, 40, 5, "%") + s("eqSigma", "Valuation sigma", 20, 90, 5, "%") + s("eqFailPct", "Company failure /yr", 0, 15, 1, "%") + s("eqMktCorr", "Equity-market correlation", 0, 0.9, 0.1) + s("liqYear", "Liquidity yr (0=never)", 0, 15, 1) + s("haircut", "Liquidity haircut", 0, 60, 5, "%") + s("eqTax", "Equity tax", 20, 50, 5, "%"))}
   ${grp("Market + retirement", `<div class="ctl"><label>Return model</label><select id="returnModel">
     <option value="normal"${c.returnModel === "normal" ? " selected" : ""}>Normal (iid)</option>
     <option value="t"${c.returnModel === "t" ? " selected" : ""}>Fat tails (Student-t df5)</option>
     <option value="bootstrap"${c.returnModel === "bootstrap" ? " selected" : ""}>Historical block bootstrap</option>
-  </select></div>` + s("usMu", "US real return mu", 3, 11, 0.5, "%") + s("divDrag", "Dividend tax drag /yr", 0, 0.6, 0.05, "%") + s("startingNW", "Starting NW", 200000, 800000, 10000) + s("fireSpend", "FIRE spend $/yr", 50000, 150000, 5000) + s("swr", "SWR", 3, 4.5, 0.25, "%") + s("retireAge", "Earliest retire age (0=at FIRE)", 0, 55, 1) + s("wdTax", "Withdrawal tax gross-up", 0, 25, 1, "%") + s("retHealthAnnual", "Pre-65 health cost /yr", 0, 25000, 1000) + s("ssAnnual", "Social Security /yr (0=none)", 0, 40000, 1000) + s("ssAge", "Social Security age", 62, 70, 1) + s("guardrails", "Guardrails (0/1)", 0, 1, 1) + s("grCutPct", "Guardrail spend cut", 5, 30, 5, "%") + s("chartAge", "Chart to age", 50, 90, 5))}
+  </select></div>` + s("usMu", "US real return mu", 3, 11, 0.5, "%") + s("divDrag", "Dividend tax drag /yr", 0, 0.6, 0.05, "%") + s("startingNW", "Starting NW", 200000, 800000, 10000) + s("fireSpend", "FIRE spend $/yr", 50000, 150000, 5000) + s("swr", "SWR", 3, 4.5, 0.25, "%") + s("retireAge", "Earliest retire age (0=at FIRE)", 0, 55, 1) + s("wdTax", "Withdrawal tax gross-up", 0, 25, 1, "%") + s("retHealthAnnual", "Pre-65 health cost /yr", 0, 25000, 1000) + s("ssAnnual", "Social Security /yr (0=none)", 0, 40000, 1000) + s("ssAge", "Social Security age", 62, 70, 1) + s("guardrails", "Guardrails (0/1)", 0, 1, 1) + s("grCutPct", "Guardrail spend cut", 5, 30, 5, "%") + s("chartAge", "Chart to age", 50, 90, 5) + s("logScale", "Log-scale charts (0/1)", 0, 1, 1))}
   </div><div class="btnrow"><button class="run" onclick="rerun()">Re-run 20,000 sims</button>
   <button class="tab" onclick="resetDefaults()">Reset defaults</button>
   <span id="incomepeek" style="font-size:10px;color:#5a6a8a"></span></div></div>`;
@@ -494,6 +511,8 @@ function controlsGuide() {
   ${e("Home appreciation (real)", "yearly real growth of the home's value. Home equity (value minus remaining mortgage, 30-yr straight-line paydown) shows up in the dashed total-NW overlay, but NEVER counts toward the FIRE trigger: you can't eat a house.")}
   ${g("Equity")}
   ${e("Initial grant", "the $700K RSU grant at the Series E-1 price. It counts $0 toward FIRE unless a liquidity event happens; until then it is only the dashed overlay line.")}
+  ${e("Promo grant (0=none)", "a ONE-TIME new RSU grant at the chosen service year, stacked on top of the initial grant with its own cliff-then-25%/yr vest. This is the control for 'if I'm promoted to Staff at year 4, expect ~$1M given $700K at Senior.' Default 0: no promo grant is promised. Note the initial grant doesn't expire at year 4 (it finishes VESTING then; the 10-year double-trigger expiry is part of the failure slider).")}
+  ${e("Promo grant at service yr", "which service year the promo grant lands (4 = alongside a year-4 Staff promotion).")}
   ${e("Refresh grant /yr (from yr 2)", "new RSU grants layered ON TOP of the initial grant each year, the way public tech companies do it (each new grant starts its own 4-year vest, so grants overlap rather than waiting for the first to finish). Default 0: the offer letter promises no refresh program and private companies often skip them. Set $100-175K to model a public-tech-style program (2024-25 norm is 20-25% of the initial grant per year).")}
   ${e("Valuation growth mu", "the average yearly growth of the company's valuation. 15% is a healthy late-stage assumption; 0 or negative stress-tests stagnation.")}
   ${e("Valuation sigma", "how wildly the valuation swings year to year. Private-company outcomes are wide; 50% is realistic.")}
@@ -517,6 +536,7 @@ function controlsGuide() {
   ${e("Guardrails (0/1)", "spend flexibility, the single biggest survival lever. ON: whenever the portfolio sits below 85% of its retirement-day value, spending is cut by the guardrail percentage until it recovers. This models what real retirees do in bad markets. OFF (0) is the robot retiree who withdraws the same real amount through every crash: the most pessimistic behavior assumption.")}
   ${e("Guardrail spend cut", "how deep the temporary cut goes when the guardrail is breached. 15% of a $112K budget is living on ~$95K in bad years, hardly hardship at these spend levels.")}
   ${e("Chart to age", "how far the fan charts draw. The simulation ALWAYS runs to 90 regardless; this only zooms the picture. 80 shows the drawdown decades; 50-60 zooms the accumulation race.")}
+  ${e("Log-scale charts (0/1)", "ON: the fan charts use a log y-axis so the median stays readable even when the 90th percentile runs to $50M+; equal vertical steps are equal MULTIPLES (each gridline is 2-2.5x the one below). Floor $100K: ruined paths ride the bottom edge. OFF: linear dollars.")}
   </details>`;
 }
 
@@ -549,7 +569,7 @@ function assumptionsBox() {
   Income: $225K base + $75K x ${c.attainment}% | real growth ${c.compGrowth}%/yr${c.promoYear ? ` | promo +${fmt(c.promoJump)} at yr ${c.promoYear}` : ""} | job-loss ${c.jobLossPct}%/yr (6-mo gap) | 401k $24.5K no match | HSA ${c.hsaAnnual ? fmt(c.hsaAnnual) + " (incl. $1,237 employer, FICA-exempt)" : "off"} | 2026 fed + MD + Howard Co + FICA | invested yr-1: <b style="color:#22d3ee">${fmt(inc.invested)}</b><br>
   Life: ${c.kids ? `${c.kids} kid(s) from age ${c.kidAge} ($34K/yr yrs 0-5, $18K/yr 6-17${c.college ? ", $120K college" : ""})` : "no kids modeled"} | ${c.homeAge ? `home at ${c.homeAge} (${fmt(c.homePrice)}, ${c.homeDownPct}%+3% out, then $${c.homePostSpendWk}/wk)` : "no home purchase"} | move-out ${c.moveOutAge}<br>
   Market: ${c.returnModel === "bootstrap" ? "HISTORICAL 5-yr block bootstrap 1970-2024 (real, correlated, mean-reverting)" : c.returnModel === "t" ? "Student-t df5 fat tails" : "iid normal"} | 2/3 US (mu ${c.usMu}% real) + 1/3 intl (mu ${(c.usMu - 2.5).toFixed(1)}%)${c.returnModel === "bootstrap" && c.usMu !== 7 ? ` | bootstrap shifted ${c.usMu > 7 ? "+" : ""}${(c.usMu - 7).toFixed(1)}pts` : ""} | conservative scenario: both sleeves -2.5pts | dividend drag ${c.divDrag}%/yr<br>
-  Equity: ${fmt(c.grant)} + ${fmt(c.refreshAnnual)}/yr refresh from yr 2 (2024-25 norm ~20-25% of initial) | cliff+monthly | mu ${c.eqMu}% sig ${c.eqSigma}% | fail ${c.eqFailPct}%/yr | liquidity yr ${c.liqYear || "never"} (-${c.haircut}% -${c.eqTax}%) | refreshes stop at liquidity/retirement; double-trigger RSU assumed<br>
+  Equity: ${fmt(c.grant)}${c.grant2 > 0 ? ` + ${fmt(c.grant2)} promo grant at yr ${c.grant2Year}` : ""} + ${fmt(c.refreshAnnual)}/yr refresh from yr 2 (2024-25 norm ~20-25% of initial) | cliff+monthly | mu ${c.eqMu}% sig ${c.eqSigma}% | fail ${c.eqFailPct}%/yr | liquidity yr ${c.liqYear || "never"} (-${c.haircut}% -${c.eqTax}%) | refreshes stop at liquidity/retirement; double-trigger RSU assumed<br>
   Retirement: ${c.retireAge ? "retire at FIRE, no earlier than " + c.retireAge : "retire when FIRE"} | withdraw ($${(c.fireSpend / 1000)}K + $${(c.retHealthAnnual / 1000)}K health pre-65 + kid costs) x (1+${c.wdTax}%) minus SS ${c.ssAnnual ? fmt(c.ssAnnual) + " from " + c.ssAge : "off"} | guardrails ${c.guardrails ? `ON (-${c.grCutPct}% spend below 85% of retire-day NW)` : "OFF (fixed real withdrawal, never adjusts)"} | FIRE target ${fmt((c.fireSpend + c.retHealthAnnual) / (c.swr / 100))} at ${c.swr}% | ERN context: fail-safe ~3.25% for 50-60yr horizons<br>
   FIRE = liquid portfolio only; unrealized equity + home equity are the dashed overlay.</div>`;
 }
