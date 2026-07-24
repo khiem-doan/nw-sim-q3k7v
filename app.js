@@ -475,7 +475,7 @@ function controlsGuide() {
   ${e("Job-loss chance /yr", "each working year has this chance of a 6-month income gap: half the year's contribution is lost AND half a year of spending is drawn from the portfolio. Deterministic never-unemployed income was the model's biggest hidden optimism; 0 restores it.")}
   ${e("HSA total /yr (0=none)", "total yearly HSA money: Turing's $1,237 employer contribution plus your payroll contributions, up to the $4,400 self-only 2026 cap. Contributions skip income tax AND FICA and stay invested. Set 0 while still covered by a parents' (non-HDHP) plan, which makes you HSA-ineligible.")}
   ${g("Spending + life events")}
-  ${e("Spend at home /wk", "weekly spending while living with family. Current reality: $600.")}
+  ${e("Spend at home /wk", "weekly spending while living with family. Canon: $350/wk actual through the Studient era; $600/wk is the PLANNED number from the Turing start (Aug 2026), which is what the default models. Set 350 to see the if-spending-never-rises case.")}
   ${e("Move-out age", "the age spending switches from the at-home number to the rent number.")}
   ${e("Rent spend /wk", "weekly all-in spending once living independently (rent, food, everything).")}
   ${e("Children", "how many kids. Each costs $34K/yr for ages 0-5 (the childcare years) and $18K/yr for ages 6-17, per USDA-based estimates.")}
