@@ -25,6 +25,8 @@ const D = {
   promoYear: 0, promoJump: 60000, // 0 promoYear = off (default): no promotion is promised; slide up to model one
   jobLossPct: 3, // %/yr chance of a 6-month income gap (at-will AI-sector startup); 0 restores the old no-risk income path
   homeSpendWk: 600, moveOutAge: 30, moveOutSpendWk: 1292,
+  rentWk: 0,           // EXPLICIT weekly rent while renting (0 = legacy: rent embedded in moveOutSpendWk/fireSpend). When set, moveOutSpendWk and fireSpend should be NON-housing only.
+  rentGrowthPct: 0.75, // real rent growth %/yr (rents historically outpace inflation; a fixed mortgage does the opposite)
   fireSpend: 100000, swr: 3.5, retireAge: 38, wdTax: 8, // retireAge 0 = retire at FIRE; default 38 per plan (cushion years past the number)
   retHealthAnnual: 12000, // pre-Medicare (under-65) health cost in retirement: ACA premium + OOP; added to spend AND the FIRE target
   ssAnnual: 25000, ssAge: 67, // Social Security offset from ssAge; ~PIA for 15 max-taxable years, haircut ~25% for trust-fund risk; 0 = exclude
@@ -155,7 +157,7 @@ function randT5() { // variance-normalized Student-t df=5
 function buildSchedules(sc, cfg) {
   const years = cfg.endAge - cfg.startAge;
   const att = cfg.attainment / 100, g = cfg.compGrowth / 100;
-  const contribs = [], outflows = [], spendInfo = [], kidCosts = [], houseCosts = [], homeEq = [];
+  const contribs = [], outflows = [], spendInfo = [], kidCosts = [], houseCosts = [], rentCosts = [], homeEq = [];
   for (let y = 0; y < years; y++) {
     const age = cfg.startAge + y;
     let extra = 0;
@@ -176,7 +178,12 @@ function buildSchedules(sc, cfg) {
       houseCost = mtgRealAnnual(cfg, k) + cfg.homePrice * cfg.homeCarryPct / 100;
     }
     const baseWk = owned ? cfg.homeExtraSpendWk : (age < cfg.moveOutAge ? cfg.homeSpendWk : cfg.moveOutSpendWk);
-    const spendWk = baseWk + (houseCost + kidCost) / 52;
+    // explicit rent (grows in real terms, ends at purchase); 0 = legacy mode with rent embedded in the spend sliders
+    let rentCost = 0;
+    if (cfg.rentWk > 0 && age >= cfg.moveOutAge && !owned) {
+      rentCost = cfg.rentWk * 52 * Math.pow(1 + cfg.rentGrowthPct / 100, age - cfg.moveOutAge);
+    }
+    const spendWk = baseWk + (houseCost + rentCost + kidCost) / 52;
 
     if (sc.studient) {
       contribs.push(cfg.studientContrib);
@@ -191,6 +198,7 @@ function buildSchedules(sc, cfg) {
     spendInfo.push(Math.round(spendWk * 52));
     kidCosts.push(kidCost); // kept separately so retirement-phase withdrawals can charge kid years too
     houseCosts.push(houseCost); // ditto: the mortgage doesn't stop because you retired
+    rentCosts.push(rentCost); // ditto for renters: rent continues (and keeps growing) through retirement
     // home-equity overlay: value grows at homeAppr real, minus the real amortized mortgage balance
     if (owned) {
       const own = age - cfg.homeAge;
@@ -198,12 +206,12 @@ function buildSchedules(sc, cfg) {
       homeEq.push(val - mtgRealBalance(cfg, own));
     } else homeEq.push(0);
   }
-  return { contribs, outflows, spendInfo, kidCosts, houseCosts, homeEq, years };
+  return { contribs, outflows, spendInfo, kidCosts, houseCosts, rentCosts, homeEq, years };
 }
 
 // ===== simulation =====
 function runSim(sc, cfg) {
-  const { contribs, outflows, spendInfo, kidCosts, houseCosts, homeEq, years } = buildSchedules(sc, cfg);
+  const { contribs, outflows, spendInfo, kidCosts, houseCosts, rentCosts, homeEq, years } = buildSchedules(sc, cfg);
   const usMu = (cfg.usMu !== undefined ? cfg.usMu : 7) / 100;
   const consAdj = sc.returns === "cons" ? 0.025 : 0; // conservative scenario: both sleeves 2.5pts below
   const spyMean = usMu - consAdj;
@@ -219,7 +227,10 @@ function runSim(sc, cfg) {
     if (cfg.homeAge > 0 && age >= cfg.homeAge) {
       const k = age - cfg.homeAge;
       fireTargetY.push(fireTarget + (cfg.homePrice * cfg.homeCarryPct / 100) / (cfg.swr / 100) + mtgRealBalance(cfg, k));
-    } else fireTargetY.push(fireTarget);
+    } else {
+      // renters with explicit rent must fund that year's rent as a perpetuity too (understates future rent growth; documented)
+      fireTargetY.push(fireTarget + rentCosts[y] / (cfg.swr / 100));
+    }
   }
   const drag = cfg.divDrag / 100;
   const wdGross = 1 + cfg.wdTax / 100;
@@ -281,7 +292,8 @@ function runSim(sc, cfg) {
           nw = nw * (1 + r) + c * (1 + r / 2);
         } else {
           // withdrawal: spend + pre-65 healthcare + any kid costs, grossed up for tax, less Social Security
-          let need = (cfg.fireSpend + (age < 65 ? cfg.retHealthAnnual : 0) + kidCosts[y] + (sc.partner ? cfg.partnerRetSpend : 0)) * wdGross;
+          // rent sits INSIDE the guardrail-cuttable portion (a renter can downsize; a mortgage can't be cut)
+          let need = (cfg.fireSpend + (age < 65 ? cfg.retHealthAnnual : 0) + kidCosts[y] + rentCosts[y] + (sc.partner ? cfg.partnerRetSpend : 0)) * wdGross;
           // guardrails: while the portfolio sits below 85% of its retirement-day value, cut spending -
           // but the mortgage + home carry are FIXED obligations the cut can't touch
           if (cfg.guardrails && nw < 0.85 * retNW) need *= 1 - cfg.grCutPct / 100;
@@ -529,7 +541,7 @@ function scenarioDefs() {
   ];
 }
 
-const SLIDER_IDS = ["attainment", "compGrowth", "promoYear", "promoJump", "jobLossPct", "hsaAnnual", "homeSpendWk", "moveOutAge", "moveOutSpendWk", "fireSpend", "swr", "retireAge", "wdTax", "retHealthAnnual", "ssAnnual", "ssAge", "guardrails", "grCutPct", "chartAge", "logScale", "partnerAge", "partnerIncome", "partnerSpendWk", "partnerRetSpend", "startingNW", "grant", "grant2", "grant2Year", "refreshAnnual", "eqMu", "eqSigma", "eqFailPct", "eqMktCorr", "liqYear", "haircut", "eqTax", "liqProbPct", "kids", "kidAge", "college", "homeAge", "homePrice", "homeDownPct", "mtgYears", "mtgRate", "homeCarryPct", "homeExtraSpendWk", "homeAppr", "inflPct", "divDrag", "usMu"];
+const SLIDER_IDS = ["attainment", "compGrowth", "promoYear", "promoJump", "jobLossPct", "hsaAnnual", "homeSpendWk", "moveOutAge", "moveOutSpendWk", "rentWk", "rentGrowthPct", "fireSpend", "swr", "retireAge", "wdTax", "retHealthAnnual", "ssAnnual", "ssAge", "guardrails", "grCutPct", "chartAge", "logScale", "partnerAge", "partnerIncome", "partnerSpendWk", "partnerRetSpend", "startingNW", "grant", "grant2", "grant2Year", "refreshAnnual", "eqMu", "eqSigma", "eqFailPct", "eqMktCorr", "liqYear", "haircut", "eqTax", "liqProbPct", "kids", "kidAge", "college", "homeAge", "homePrice", "homeDownPct", "mtgYears", "mtgRate", "homeCarryPct", "homeExtraSpendWk", "homeAppr", "inflPct", "divDrag", "usMu"];
 
 function ctlHtml() {
   const c = CFG;
@@ -538,7 +550,7 @@ function ctlHtml() {
   const grp = (title, inner) => `<div style="grid-column:1/-1;color:#22d3ee;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;border-top:1px solid #1a2035;padding-top:10px;margin-top:4px">${title}</div>${inner}`;
   return `<div class="controls"><h3>Controls (re-run after changing)</h3><div class="ctl-grid">
   ${grp("Income", s("attainment", "Variable attainment", 0, 150, 5, "%") + s("compGrowth", "Real comp growth /yr", 0, 8, 0.5, "%") + s("promoYear", "Promo year (0=off)", 0, 10, 1) + s("promoJump", "Promo OTE jump", 0, 150000, 10000) + s("jobLossPct", "Job-loss chance /yr", 0, 10, 0.5, "%") + s("hsaAnnual", "HSA total /yr (0=none)", 0, 8750, 50))}
-  ${grp("Spending + life events", s("homeSpendWk", "Spend at home /wk", 300, 1500, 25) + s("moveOutAge", "Move-out age", 26, 40, 1) + s("moveOutSpendWk", "Rent spend /wk", 600, 3000, 25) + s("kids", "Children", 0, 3, 1) + s("kidAge", "First child at age", 27, 42, 1) + s("college", "College fund (0/1)", 0, 1, 1) + s("homeAge", "Buy home at age (0=never)", 0, 45, 1) + s("homePrice", "Home price", 300000, 5000000, 50000) + s("homeDownPct", "Down payment (100 = all cash)", 5, 100, 5, "%") + s("mtgYears", "Mortgage term (yrs)", 10, 30, 5) + s("mtgRate", "Mortgage rate (nominal)", 3, 9, 0.25, "%") + s("homeCarryPct", "Carry: tax+ins+upkeep /yr", 1, 4, 0.25, "%") + s("homeExtraSpendWk", "Non-housing spend /wk after buy", 300, 4000, 50) + s("homeAppr", "Home appreciation (real)", 0, 3, 0.25, "%"))}
+  ${grp("Spending + life events", s("homeSpendWk", "Spend at home /wk", 300, 1500, 25) + s("moveOutAge", "Move-out age", 26, 40, 1) + s("moveOutSpendWk", "Rent-era spend /wk", 600, 3000, 25) + s("rentWk", "Explicit rent /wk (0=embedded)", 0, 1500, 25) + s("rentGrowthPct", "Rent growth /yr (real)", 0, 2, 0.25, "%") + s("kids", "Children", 0, 3, 1) + s("kidAge", "First child at age", 27, 42, 1) + s("college", "College fund (0/1)", 0, 1, 1) + s("homeAge", "Buy home at age (0=never)", 0, 45, 1) + s("homePrice", "Home price", 300000, 5000000, 50000) + s("homeDownPct", "Down payment (100 = all cash)", 5, 100, 5, "%") + s("mtgYears", "Mortgage term (yrs)", 10, 30, 5) + s("mtgRate", "Mortgage rate (nominal)", 3, 9, 0.25, "%") + s("homeCarryPct", "Carry: tax+ins+upkeep /yr", 1, 4, 0.25, "%") + s("homeExtraSpendWk", "Non-housing spend /wk after buy", 300, 4000, 50) + s("homeAppr", "Home appreciation (real)", 0, 3, 0.25, "%"))}
   ${grp("Partner (purple scenario only)", s("partnerAge", "Partner joins at age", 26, 40, 1) + s("partnerIncome", "Partner gross salary", 0, 300000, 10000) + s("partnerSpendWk", "Partner added spend /wk", 0, 1500, 25) + s("partnerRetSpend", "Partner retirement spend /yr", 0, 60000, 5000))}
   ${grp("Equity", s("grant", "Initial grant", 0, 1200000, 50000) + s("grant2", "Promo grant (0=none)", 0, 1500000, 50000) + s("grant2Year", "Promo grant at service yr", 1, 10, 1) + s("refreshAnnual", "Refresh grant /yr (from yr 2)", 0, 350000, 25000) + s("eqMu", "Valuation growth mu", -20, 40, 5, "%") + s("eqSigma", "Valuation sigma", 20, 90, 5, "%") + s("eqFailPct", "Company failure /yr", 0, 15, 1, "%") + s("eqMktCorr", "Equity-market correlation", 0, 0.9, 0.1) + s("liqYear", "Liquidity yr (0=never)", 0, 15, 1) + s("liqProbPct", "Liquidity chance /yr (overrides yr)", 0, 15, 1, "%") + s("haircut", "Liquidity haircut", 0, 60, 5, "%") + s("eqTax", "Equity tax", 20, 50, 5, "%"))}
   ${grp("Market + retirement", `<div class="ctl"><label>Return model</label><select id="returnModel">
@@ -566,7 +578,9 @@ function controlsGuide() {
   ${g("Spending + life events")}
   ${e("Spend at home /wk", "weekly spending while living with family. Canon: $350/wk actual through the Studient era; $600/wk is the PLANNED number from the Turing start (Aug 2026), which is what the default models. Set 350 to see the if-spending-never-rises case.")}
   ${e("Move-out age", "the age spending switches from the at-home number to the rent number.")}
-  ${e("Rent spend /wk", "weekly all-in spending once living independently (rent, food, everything).")}
+  ${e("Rent-era spend /wk", "weekly spending once living independently. If explicit rent below is 0, this is ALL-IN (rent included); if explicit rent is set, keep this NON-housing only.")}
+  ${e("Explicit rent /wk (0=embedded)", "makes rent a first-class cost for fair rent-vs-own comparisons. It grows in real terms, continues through retirement (added to withdrawals AND the renter's FIRE bar as that year's perpetuity), stops at a home purchase, and sits in the guardrail-cuttable bucket (a renter can downsize; a mortgage can't be cut). SAME-QUALITY RECIPE vs a home purchase: rent = price / (price-to-rent ratio 20-25) / 52; keep this and fireSpend non-housing and identical in both bookmarks.")}
+  ${e("Rent growth /yr (real)", "rents historically outpace inflation by ~0.5-1%/yr. A fixed mortgage does the opposite: shrinks in real terms and dies at payoff. This asymmetry is the structural case FOR owning; 0 turns it off.")}
   ${e("Children", "how many kids. Each costs $34K/yr for ages 0-5 (the childcare years) and $18K/yr for ages 6-17, per USDA-based estimates.")}
   ${e("First child at age", "your age when the first child arrives; siblings follow every 2 years.")}
   ${e("College fund (0/1)", "1 sets aside a $120K lump per child when that child turns 18 (in-state 4-year estimate).")}
@@ -650,7 +664,7 @@ function assumptionsBox() {
   const warnHtml = warns.length ? `<div style="color:#fbbf24;font-weight:600;margin-bottom:6px">${warns.map(w => "WARNING: " + w).join("<br>")}</div>` : "";
   return `<div class="box"><div class="bt">Assumptions (planning estimates, real dollars)</div>${warnHtml}
   Income: $225K base + $75K x ${c.attainment}% | real growth ${c.compGrowth}%/yr${c.promoYear ? ` | promo +${fmt(c.promoJump)} at yr ${c.promoYear}` : ""} | job-loss ${c.jobLossPct}%/yr (6-mo gap) | 401k $24.5K no match | HSA ${c.hsaAnnual ? fmt(c.hsaAnnual) + " (incl. $1,237 employer, FICA-exempt)" : "off"} | 2026 fed + MD + Howard Co + FICA | invested yr-1: <b style="color:#22d3ee">${fmt(inc.invested)}</b><br>
-  Life: ${c.kids ? `${c.kids} kid(s) from age ${c.kidAge} ($34K/yr yrs 0-5, $18K/yr 6-17${c.college ? ", $120K college" : ""})` : "no kids modeled"} | ${c.homeAge ? `home at ${c.homeAge}: ${fmt(c.homePrice)}, ${c.homeDownPct}%+3% down/close = ${fmt(c.homePrice * (c.homeDownPct + 3) / 100)} out | <b style="color:#22d3ee">mortgage ${fmt(Math.round(mtgMonthly(c)))}/mo</b> (${c.mtgYears}yr @ ${c.mtgRate}%) + carry ${fmt(Math.round(c.homePrice * c.homeCarryPct / 100 / 12))}/mo (${c.homeCarryPct}%/yr, never ends) + your $${c.homeExtraSpendWk}/wk non-housing = <b>${fmt(Math.round(mtgMonthly(c) + c.homePrice * c.homeCarryPct / 100 / 12 + c.homeExtraSpendWk * 52 / 12))}/mo all-in yr 1</b>` : "no home purchase"} | move-out ${c.moveOutAge}<br>
+  Life: ${c.kids ? `${c.kids} kid(s) from age ${c.kidAge} ($34K/yr yrs 0-5, $18K/yr 6-17${c.college ? ", $120K college" : ""})` : "no kids modeled"} | ${c.homeAge ? `home at ${c.homeAge}: ${fmt(c.homePrice)}, ${c.homeDownPct}%+3% down/close = ${fmt(c.homePrice * (c.homeDownPct + 3) / 100)} out | <b style="color:#22d3ee">mortgage ${fmt(Math.round(mtgMonthly(c)))}/mo</b> (${c.mtgYears}yr @ ${c.mtgRate}%) + carry ${fmt(Math.round(c.homePrice * c.homeCarryPct / 100 / 12))}/mo (${c.homeCarryPct}%/yr, never ends) + your $${c.homeExtraSpendWk}/wk non-housing = <b>${fmt(Math.round(mtgMonthly(c) + c.homePrice * c.homeCarryPct / 100 / 12 + c.homeExtraSpendWk * 52 / 12))}/mo all-in yr 1</b>` : "no home purchase"} | move-out ${c.moveOutAge} | rent ${c.rentWk > 0 ? `$${c.rentWk}/wk explicit, +${c.rentGrowthPct}%/yr real${c.homeAge ? ", ends at purchase" : ", continues in retirement"}` : "embedded in spend sliders"}<br>
   Partner (purple scenario): joins at ${c.partnerAge} | gross ${fmt(c.partnerIncome)} taxed separately | adds $${c.partnerSpendWk}/wk spend while working -> net contribution ${fmt(partnerNetAnnual(c))}/yr | +${fmt(c.partnerRetSpend)}/yr retirement spend (raises that scenario's FIRE target; partner's own SS/assets NOT counted)<br>
   Market: ${c.returnModel === "bootstrap" ? "HISTORICAL 5-yr block bootstrap 1970-2024 (real, correlated, mean-reverting)" : c.returnModel === "t" ? "Student-t df5 fat tails" : "iid normal"} | 2/3 US (mu ${c.usMu}% real) + 1/3 intl (mu ${(c.usMu - 2.5).toFixed(1)}%)${c.returnModel === "bootstrap" && c.usMu !== 7 ? ` | bootstrap shifted ${c.usMu > 7 ? "+" : ""}${(c.usMu - 7).toFixed(1)}pts` : ""} | conservative scenario: both sleeves -2.5pts | dividend drag ${c.divDrag}%/yr<br>
   Equity: ${fmt(c.grant)}${c.grant2 > 0 ? ` + ${fmt(c.grant2)} promo grant at yr ${c.grant2Year}` : ""} + ${fmt(c.refreshAnnual)}/yr refresh from yr 2 (2024-25 norm ~20-25% of initial) | cliff+monthly | mu ${c.eqMu}% sig ${c.eqSigma}% | fail ${c.eqFailPct}%/yr | liquidity ${c.liqProbPct > 0 ? c.liqProbPct + "%/yr chance from yr 2 (~" + Math.round((1 - Math.pow(1 - c.liqProbPct / 100, 9)) * 100) + "% by yr 10)" : "yr " + (c.liqYear || "never")} (-${c.haircut}% -${c.eqTax}%) | refreshes stop at liquidity/retirement; double-trigger RSU assumed<br>

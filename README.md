@@ -9,6 +9,10 @@ v6 (2026-07-20): income+tax model (MD/Howard Co), private-equity module (cliff/m
 - Controls guide: collapsible "What each control means" section under the control panel, plain-English explanation for all 29 controls grouped by panel.
 - (v7 carry: starting NW default corrected to $290K; live site shows this only after push.)
 
+## v8.5 (2026-07-23)
+- Explicit rent (`rentWk`, 0 = legacy embedded mode) + real rent growth (`rentGrowthPct` default 0.75%/yr): rent becomes a first-class cost that grows in real terms, continues through retirement (added to withdrawals and the renter's per-year FIRE bar as that year's perpetuity), ends at a home purchase, and is guardrail-cuttable (renters can downsize; mortgages can't be cut). Fixes the rent-vs-own comparison bias: the old rent baseline implied a ~$1,265/mo apartment against a $1.2M house, and ignored that rent outpaces inflation while a fixed mortgage shrinks in real terms and dies.
+- Same-quality recipe documented in the guide: rent = price / (price-to-rent 20-25) / 52, with moveOutSpendWk and fireSpend kept non-housing and identical across the rent/own bookmarks.
+
 ## v8.4 (2026-07-23)
 - Real mortgage model, replacing the all-in homePostSpendWk guess: `mtgYears` (10-30), `mtgRate` (nominal, default 6.5%), payment auto-computed via standard amortization and deflated to real dollars by `inflPct` (2.5%), so the real burden falls each year and ENDS at payoff. `homeCarryPct` (2%/yr of value: tax+insurance+upkeep, never ends) auto-added. `homeExtraSpendWk` is the user's NON-housing spend. The assumptions box prints the monthly mortgage, carry, and all-in year-1 number.
 - Mortgage in retirement done right: house costs are charged in retired years, guardrail cuts CANNOT touch them (fixed obligation), and the per-year FIRE bar rises while owned (carry perpetuity + remaining mortgage balance). Home-equity overlay now uses the real amortized balance.
